@@ -1,0 +1,1904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Region Map Editor</title>
+  <style>
+    :root {
+      --bg: #111827;
+      --panel: #1f2937;
+      --panel-2: #111827;
+      --text: #f9fafb;
+      --muted: #9ca3af;
+      --accent: #60a5fa;
+      --border: #374151;
+      --danger: #f87171;
+      --ok: #34d399;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns: 440px 1fr;
+      min-height: 100vh;
+    }
+
+    .sidebar {
+      border-right: 1px solid var(--border);
+      background: var(--panel);
+      padding: 16px;
+      overflow: auto;
+    }
+
+    .main {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 100vh;
+    }
+
+    h1, h2, h3 {
+      margin: 0 0 12px;
+      line-height: 1.2;
+    }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.05rem; }
+    h3 { font-size: 0.92rem; }
+
+    .muted { color: var(--muted); }
+    .small { font-size: 0.9rem; }
+
+    .section {
+      border: 1px solid var(--border);
+      background: rgba(17, 24, 39, 0.55);
+      border-radius: 14px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.9rem;
+      margin-bottom: 6px;
+      color: #e5e7eb;
+    }
+
+    input, select, textarea, button {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 10px 12px;
+      font: inherit;
+    }
+
+    textarea {
+      min-height: 72px;
+      resize: vertical;
+    }
+
+    button {
+      cursor: pointer;
+      transition: 120ms ease;
+    }
+
+    button:hover:not(:disabled) {
+      border-color: var(--accent);
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .row-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .stack > * + * { margin-top: 10px; }
+
+    .toolbar {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      background: rgba(31, 41, 55, 0.8);
+      align-items: center;
+    }
+
+    .toolbar > * { width: auto; }
+
+    .workspace {
+      padding: 12px 16px 8px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    .viewport-shell {
+      width: min(1200px, calc(100vw - 520px));
+      height: 68vh;
+      min-height: 420px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      background: #000;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.25);
+      position: relative;
+    }
+
+    .viewport {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      cursor: crosshair;
+      background: #000;
+    }
+
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      display: block;
+      image-rendering: pixelated;
+      transform-origin: top left;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    .bottom-panel {
+      border-top: 1px solid var(--border);
+      background: rgba(17, 24, 39, 0.75);
+      padding: 10px 16px 14px;
+    }
+
+    .bottom-grid {
+      display: grid;
+      grid-template-columns: 1.15fr 1fr 1fr;
+      gap: 14px;
+    }
+
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      margin-right: 6px;
+      margin-bottom: 6px;
+    }
+
+    .danger {
+      border-color: #7f1d1d;
+      color: #fecaca;
+    }
+
+    .success {
+      border-color: #065f46;
+      color: #bbf7d0;
+    }
+
+    .selected-box {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      border: 1px solid rgba(255,255,255,0.35);
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    .hint {
+      font-size: 0.84rem;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .status {
+      min-height: 1.4em;
+      color: #cbd5e1;
+      font-size: 0.9rem;
+    }
+
+    .mapping-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr 0.9fr;
+      gap: 8px;
+      align-items: end;
+    }
+
+    .mapping-grid + .mapping-grid { margin-top: 8px; }
+
+    .mapping-head {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .default-param-card, .control-card {
+      border: 1px solid var(--border);
+      background: rgba(17,24,39,0.5);
+      border-radius: 12px;
+      padding: 10px;
+    }
+
+    .default-param-head, .control-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .default-param-head button, .control-head button {
+      width: auto;
+      padding: 8px 10px;
+    }
+
+    @media (max-width: 1200px) {
+      .bottom-grid { grid-template-columns: 1fr; }
+      .viewport-shell { width: calc(100vw - 48px); }
+    }
+
+    @media (max-width: 1100px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
+      .viewport-shell { width: calc(100vw - 48px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1>Region Map Editor</h1>
+      <p class="muted small">Organic land regions, square-grid oceans, optional parameter-map bulk fill, fixed core schema, dynamic extra default text fields, and editable Control factions.</p>
+
+      <div class="section stack">
+        <h2>Selected region</h2>
+        <div id="selectionSummary" class="muted">No region selected.</div>
+        <div><label for="regionName">Name</label><input id="regionName" type="text" placeholder="Region name" /></div>
+        <div class="row">
+          <div><label for="regionLand">Land</label><select id="regionLand"></select></div>
+          <div><label for="regionControl">Control</label><select id="regionControl"></select></div>
+        </div>
+        <div class="row">
+          <div><label for="regionWater">Water</label><select id="regionWater"><option value="false">false</option><option value="true">true</option></select></div>
+          <div><label for="regionStatus">Status</label><select id="regionStatus"></select></div>
+        </div>
+        <div class="row-3">
+          <div><label for="regionElevation">Elevation</label><input id="regionElevation" type="number" step="1" value="0" /></div>
+          <div><label for="regionPopulation">Population</label><input id="regionPopulation" type="number" step="1" value="0" /></div>
+          <div><label for="regionTaxPerc">TaxPerc</label><input id="regionTaxPerc" type="number" step="1" value="20" /></div>
+        </div>
+        <div class="row">
+          <div><label for="regionContent">Content</label><input id="regionContent" type="number" step="1" value="30" /></div>
+          <div><label for="regionColor">Display color</label><input id="regionColor" type="color" value="#5da9ff" /></div>
+        </div>
+        <div class="row-3">
+          <div><label for="regionParamA">ParamA</label><input id="regionParamA" type="number" step="1" value="0" /></div>
+          <div><label for="regionParamB">ParamB</label><input id="regionParamB" type="number" step="1" value="0" /></div>
+          <div><label for="regionParamC">ParamC</label><input id="regionParamC" type="number" step="1" value="0" /></div>
+        </div>
+        <div><label for="regionParamD">ParamD</label><input id="regionParamD" type="number" step="1" value="0" /></div>
+        <div id="extraFieldsContainer" class="stack"></div>
+        <div><label for="regionNotes">Notes</label><textarea id="regionNotes" placeholder="Optional notes"></textarea></div>
+        <div class="row">
+          <button id="saveRegionBtn" class="success" type="button">Save region</button>
+          <button id="resetRegionBtn" class="danger" type="button">Reset region</button>
+        </div>
+        <div class="row">
+          <button id="mergeModeBtn" type="button">Merge mode: Off</button>
+          <button id="cancelMergeBtn" class="danger" type="button">Cancel merge</button>
+        </div>
+      </div>
+
+      <div class="section stack">
+        <div class="row" style="align-items:end;">
+          <div><h2 style="margin:0;">Default text parameters</h2></div>
+          <div><button id="addDefaultParamBtn" type="button">Add new default parameter</button></div>
+        </div>
+        <div id="defaultParamsContainer" class="stack"></div>
+        <div class="row">
+          <button id="applyDefaultParamsBtn" type="button">Apply defaults to existing</button>
+          <button id="clearDefaultParamsBtn" class="danger" type="button">Clear added defaults</button>
+        </div>
+        <div class="hint">These are extra text-based fields added to every new region. They are stored in JSON as explicit top-level fields.</div>
+      </div>
+
+      <div class="section stack">
+        <div class="row" style="align-items:end;">
+          <div><h2 style="margin:0;">Control factions</h2></div>
+          <div><button id="addControlBtn" type="button">Add control faction</button></div>
+        </div>
+        <div class="row">
+          <div><label for="newControlName">New faction name</label><input id="newControlName" type="text" placeholder="Example: Empire" /></div>
+          <div><label>&nbsp;</label><button id="addControlFromTextBtn" type="button">Add from text</button></div>
+        </div>
+        <div id="controlsContainer" class="stack"></div>
+        <div class="hint">Control is a dropdown in the region editor. Added factions are immediately available and exported with the JSON.</div>
+      </div>
+
+      <div class="section stack">
+        <h2>Parameter map</h2>
+        <div class="mapping-head">Field / Channel / Max value</div>
+        <div class="mapping-grid"><div><label for="mapPopulationSource">Population</label><select id="mapPopulationSource"></select></div><div><label for="mapPopulationMode">Mode</label><select id="mapPopulationMode"></select></div><div><label for="mapPopulationMax">Max</label><input id="mapPopulationMax" type="number" step="1" value="1000" /></div></div>
+        <div class="mapping-grid"><div><label for="mapContentSource">Content</label><select id="mapContentSource"></select></div><div><label for="mapContentMode">Mode</label><select id="mapContentMode"></select></div><div><label for="mapContentMax">Max</label><input id="mapContentMax" type="number" step="1" value="100" /></div></div>
+        <div class="mapping-grid"><div><label for="mapParamASource">ParamA</label><select id="mapParamASource"></select></div><div><label for="mapParamAMode">Mode</label><select id="mapParamAMode"></select></div><div><label for="mapParamAMax">Max</label><input id="mapParamAMax" type="number" step="1" value="100" /></div></div>
+        <div class="mapping-grid"><div><label for="mapParamBSource">ParamB</label><select id="mapParamBSource"></select></div><div><label for="mapParamBMode">Mode</label><select id="mapParamBMode"></select></div><div><label for="mapParamBMax">Max</label><input id="mapParamBMax" type="number" step="1" value="100" /></div></div>
+        <div class="mapping-grid"><div><label for="mapParamCSource">ParamC</label><select id="mapParamCSource"></select></div><div><label for="mapParamCMode">Mode</label><select id="mapParamCMode"></select></div><div><label for="mapParamCMax">Max</label><input id="mapParamCMax" type="number" step="1" value="100" /></div></div>
+        <div class="mapping-grid"><div><label for="mapParamDSource">ParamD</label><select id="mapParamDSource"></select></div><div><label for="mapParamDMode">Mode</label><select id="mapParamDMode"></select></div><div><label for="mapParamDMax">Max</label><input id="mapParamDMax" type="number" step="1" value="100" /></div></div>
+        <div class="row">
+          <div><label for="mapWaterSource">Water source</label><select id="mapWaterSource"></select></div>
+          <div><label for="mapWaterThreshold">Water threshold</label><input id="mapWaterThreshold" type="number" min="0" max="255" step="1" value="160" /></div>
+        </div>
+        <div class="row">
+          <button id="applyParamMapBtn" type="button">Apply parameter map</button>
+          <button id="clearParamMapBtn" class="danger" type="button">Clear parameter map</button>
+        </div>
+        <div class="hint">The parameter map uses averaged pixel values per land region only. Ocean regions ignore it.</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="toolbar">
+        <span class="pill">Wheel zoom follows cursor</span>
+        <span class="pill">White = land, black = ocean</span>
+        <span class="pill">Height export included</span>
+        <span id="status" class="status"></span>
+      </div>
+
+      <div class="workspace">
+        <div class="viewport-shell"><div id="viewport" class="viewport"><canvas id="mapCanvas" width="800" height="600"></canvas></div></div>
+      </div>
+
+      <div class="bottom-panel">
+        <div class="bottom-grid">
+          <div class="section" style="margin:0;">
+            <h2>Input</h2>
+            <div><label for="imageInput">Primary PNG (mask)</label><input id="imageInput" type="file" accept="image/png,image/*" /></div>
+            <div><label for="paramImageInput">Secondary PNG (parameter map)</label><input id="paramImageInput" type="file" accept="image/png,image/*" /></div>
+            <div class="hint">Primary image: white = land, black = ocean. Secondary image: same dimensions, used only for land-region bulk fill.</div>
+          </div>
+          <div class="section" style="margin:0;">
+            <h2>Generation</h2>
+            <div class="row"><div><label for="seedCount">Land seed count</label><input id="seedCount" type="number" min="1" max="2000" value="80" /></div><div><label for="whiteThreshold">White threshold</label><input id="whiteThreshold" type="number" min="0" max="255" value="200" /></div></div>
+            <div class="row"><div><label for="minRegionPixels">Min land region pixels</label><input id="minRegionPixels" type="number" min="1" max="50000" value="30" /></div><div><label for="seedMode">Land generation mode</label><select id="seedMode"><option value="normal">Normal</option><option value="box">Box</option><option value="complex">Complex</option></select></div></div>
+            <div class="row"><div><label for="oceanGridSize">Ocean grid size (px)</label><input id="oceanGridSize" type="number" min="1" max="2048" value="32" /></div><div><label>&nbsp;</label><button id="generateBtn" type="button">Generate regions</button></div></div>
+            <div><button id="clearSelectionBtn" type="button">Clear selection</button></div>
+            <div class="hint">Land always has precedence. Ocean grid is clipped by the coastline because only black pixels are assigned to ocean tiles.</div>
+          </div>
+          <div class="section" style="margin:0;">
+            <h2>Export & stats</h2>
+            <div class="row"><button id="exportJsonBtn" type="button">Export JSON</button><button id="exportPngBtn" type="button">Export PNG</button></div>
+            <div class="row"><button id="exportBorderBtn" type="button">Export border PNG</button><button id="exportHeightBtn" type="button">Height Export</button></div>
+            <div style="margin-top:12px;"><h3>Stats</h3><div id="stats" class="small muted">No image loaded.</div></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const LAND_TYPES = ['Grass', 'Plains', 'Forest', 'Rocks', 'Ocean', 'Urban', 'Snow', 'Desert'];
+    const STATUS_TYPES = ['Rural', 'Town', 'City', 'Capital'];
+    const CHANNEL_OPTIONS = [
+      { value: 'none', label: 'None' },
+      { value: 'red', label: 'Red' },
+      { value: 'green', label: 'Green' },
+      { value: 'blue', label: 'Blue' },
+      { value: 'alpha', label: 'Alpha' },
+      { value: 'brightness', label: 'Brightness' }
+    ];
+    const MODE_OPTIONS = [
+      { value: 'linear', label: 'Linear' },
+      { value: 'quadratic', label: 'Quadratic' },
+      { value: 'inverseQuadratic', label: 'Inverse quadratic' }
+    ];
+
+    let controlTypes = ['Neutral', 'Nature', 'Aqua', 'Fire', 'Light', 'Dark', 'Persian', 'Viking'];
+
+    const state = {
+      imageBitmap: null,
+      width: 0,
+      height: 0,
+      imageData: null,
+      paramImageBitmap: null,
+      paramImageData: null,
+      binaryMask: null,
+      whitePixels: [],
+      regionIdMap: null,
+      borderMap: null,
+      regions: new Map(),
+      selectedRegionId: null,
+      hoverRegionId: null,
+      mergeMode: false,
+      nextRegionId: 1,
+      imageName: 'map',
+      paramImageName: '',
+      extraDefaultParams: [],
+      zoom: 1,
+      minZoom: 0.1,
+      maxZoom: 12,
+      offsetX: 0,
+      offsetY: 0
+    };
+
+    const els = {
+      imageInput: document.getElementById('imageInput'),
+      paramImageInput: document.getElementById('paramImageInput'),
+      regionName: document.getElementById('regionName'),
+      regionLand: document.getElementById('regionLand'),
+      regionControl: document.getElementById('regionControl'),
+      regionWater: document.getElementById('regionWater'),
+      regionStatus: document.getElementById('regionStatus'),
+      regionElevation: document.getElementById('regionElevation'),
+      regionPopulation: document.getElementById('regionPopulation'),
+      regionTaxPerc: document.getElementById('regionTaxPerc'),
+      regionContent: document.getElementById('regionContent'),
+      regionParamA: document.getElementById('regionParamA'),
+      regionParamB: document.getElementById('regionParamB'),
+      regionParamC: document.getElementById('regionParamC'),
+      regionParamD: document.getElementById('regionParamD'),
+      regionNotes: document.getElementById('regionNotes'),
+      regionColor: document.getElementById('regionColor'),
+      extraFieldsContainer: document.getElementById('extraFieldsContainer'),
+      saveRegionBtn: document.getElementById('saveRegionBtn'),
+      resetRegionBtn: document.getElementById('resetRegionBtn'),
+      mergeModeBtn: document.getElementById('mergeModeBtn'),
+      cancelMergeBtn: document.getElementById('cancelMergeBtn'),
+      selectionSummary: document.getElementById('selectionSummary'),
+      defaultParamsContainer: document.getElementById('defaultParamsContainer'),
+      addDefaultParamBtn: document.getElementById('addDefaultParamBtn'),
+      applyDefaultParamsBtn: document.getElementById('applyDefaultParamsBtn'),
+      clearDefaultParamsBtn: document.getElementById('clearDefaultParamsBtn'),
+      controlsContainer: document.getElementById('controlsContainer'),
+      newControlName: document.getElementById('newControlName'),
+      addControlBtn: document.getElementById('addControlBtn'),
+      addControlFromTextBtn: document.getElementById('addControlFromTextBtn'),
+      applyParamMapBtn: document.getElementById('applyParamMapBtn'),
+      clearParamMapBtn: document.getElementById('clearParamMapBtn'),
+      mapPopulationSource: document.getElementById('mapPopulationSource'),
+      mapPopulationMode: document.getElementById('mapPopulationMode'),
+      mapPopulationMax: document.getElementById('mapPopulationMax'),
+      mapContentSource: document.getElementById('mapContentSource'),
+      mapContentMode: document.getElementById('mapContentMode'),
+      mapContentMax: document.getElementById('mapContentMax'),
+      mapParamASource: document.getElementById('mapParamASource'),
+      mapParamAMode: document.getElementById('mapParamAMode'),
+      mapParamAMax: document.getElementById('mapParamAMax'),
+      mapParamBSource: document.getElementById('mapParamBSource'),
+      mapParamBMode: document.getElementById('mapParamBMode'),
+      mapParamBMax: document.getElementById('mapParamBMax'),
+      mapParamCSource: document.getElementById('mapParamCSource'),
+      mapParamCMode: document.getElementById('mapParamCMode'),
+      mapParamCMax: document.getElementById('mapParamCMax'),
+      mapParamDSource: document.getElementById('mapParamDSource'),
+      mapParamDMode: document.getElementById('mapParamDMode'),
+      mapParamDMax: document.getElementById('mapParamDMax'),
+      mapWaterSource: document.getElementById('mapWaterSource'),
+      mapWaterThreshold: document.getElementById('mapWaterThreshold'),
+      seedCount: document.getElementById('seedCount'),
+      whiteThreshold: document.getElementById('whiteThreshold'),
+      minRegionPixels: document.getElementById('minRegionPixels'),
+      oceanGridSize: document.getElementById('oceanGridSize'),
+      seedMode: document.getElementById('seedMode'),
+      generateBtn: document.getElementById('generateBtn'),
+      clearSelectionBtn: document.getElementById('clearSelectionBtn'),
+      exportJsonBtn: document.getElementById('exportJsonBtn'),
+      exportPngBtn: document.getElementById('exportPngBtn'),
+      exportBorderBtn: document.getElementById('exportBorderBtn'),
+      exportHeightBtn: document.getElementById('exportHeightBtn'),
+      stats: document.getElementById('stats'),
+      status: document.getElementById('status'),
+      mapCanvas: document.getElementById('mapCanvas'),
+      viewport: document.getElementById('viewport')
+    };
+
+    const ctx = els.mapCanvas.getContext('2d', { willReadFrequently: true });
+
+    function setStatus(message) { els.status.textContent = message; }
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+    function toInt(value, fallback = 0) { const n = parseInt(value, 10); return Number.isFinite(n) ? n : fallback; }
+    function randomInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+    function idx(x, y, width) { return y * width + x; }
+    function sanitizeKey(value) { return String(value || '').trim().replace(/[^A-Za-z0-9_]/g, '_').replace(/^_+/, ''); }
+    function escapeHtml(value) { return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;'); }
+
+    function populateSelect(select, options) {
+      const current = select.value;
+      select.innerHTML = '';
+      for (const option of options) {
+        const el = document.createElement('option');
+        const value = typeof option === 'string' ? option : option.value;
+        const label = typeof option === 'string' ? option : option.label;
+        el.value = value;
+        el.textContent = label;
+        select.appendChild(el);
+      }
+      if (options.includes(current)) select.value = current;
+    }
+
+    function regionColorFromId(id, isOcean = false) {
+      if (isOcean) {
+        const x = Math.sin(id * 7.123) * 15731.743;
+        const frac = x - Math.floor(x);
+        const hue = 190 + Math.floor(frac * 40);
+        return hslToHex(hue, 58, 44);
+      }
+      const x = Math.sin(id * 12.9898) * 43758.5453;
+      const frac = x - Math.floor(x);
+      const hue = Math.floor(frac * 360);
+      return hslToHex(hue, 68, 58);
+    }
+
+    function hslToHex(h, s, l) {
+      s /= 100;
+      l /= 100;
+      const k = n => (n + h / 30) % 12;
+      const a = s * Math.min(l, 1 - l);
+      const f = n => {
+        const color = l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+        return Math.round(255 * color);
+      };
+      return rgbToHex(f(0), f(8), f(4));
+    }
+
+    function rgbToHex(r, g, b) { return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join(''); }
+
+    function hexToRgb(hex) {
+      const clean = hex.replace('#', '');
+      const full = clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean;
+      const num = parseInt(full, 16);
+      return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+    }
+
+    function createEmptyTypedArray(width, height, type = 'int32', fill = -1) {
+      const size = width * height;
+      const arr = type === 'uint8' ? new Uint8Array(size) : new Int32Array(size);
+      if (fill !== 0) arr.fill(fill);
+      return arr;
+    }
+
+    function getExtraDefaultsObject() {
+      const extra = {};
+      for (const def of state.extraDefaultParams) {
+        const key = sanitizeKey(def.key);
+        if (!key) continue;
+        extra[key] = def.defaultValue || '';
+      }
+      return extra;
+    }
+
+    function makeDefaultRegion(id, x, y, isOcean = false) {
+      return {
+        id,
+        seed: [x, y],
+        area: 0,
+        color: regionColorFromId(id, isOcean),
+        notes: '',
+        name: isOcean ? `Ocean ${id}` : `Region ${id}`,
+        land: isOcean ? 'Ocean' : 'Grass',
+        control: 'Neutral',
+        water: isOcean,
+        elevation: 0,
+        status: 'Rural',
+        population: 0,
+        taxPerc: 20,
+        content: 30,
+        paramA: 0,
+        paramB: 0,
+        paramC: 0,
+        paramD: 0,
+        extraFields: getExtraDefaultsObject(),
+        isOcean
+      };
+    }
+
+    function setCanvasTransform() {
+      if (!Number.isFinite(state.offsetX)) state.offsetX = 0;
+      if (!Number.isFinite(state.offsetY)) state.offsetY = 0;
+      if (!Number.isFinite(state.zoom)) state.zoom = 1;
+      els.mapCanvas.style.transform = `translate(${state.offsetX}px, ${state.offsetY}px) scale(${state.zoom})`;
+    }
+
+    function clampOffsets() {
+      const viewportRect = els.viewport.getBoundingClientRect();
+      if (!viewportRect.width || !viewportRect.height || !state.width || !state.height) return;
+      const scaledWidth = state.width * state.zoom;
+      const scaledHeight = state.height * state.zoom;
+      if (scaledWidth <= viewportRect.width) {
+        state.offsetX = (viewportRect.width - scaledWidth) / 2;
+      } else {
+        const minX = viewportRect.width - scaledWidth;
+        state.offsetX = clamp(state.offsetX, minX, 0);
+      }
+      if (scaledHeight <= viewportRect.height) {
+        state.offsetY = (viewportRect.height - scaledHeight) / 2;
+      } else {
+        const minY = viewportRect.height - scaledHeight;
+        state.offsetY = clamp(state.offsetY, minY, 0);
+      }
+    }
+
+    function fitCanvasToViewport() {
+      if (!state.width || !state.height) return;
+      const viewportRect = els.viewport.getBoundingClientRect();
+      if (!viewportRect.width || !viewportRect.height) return;
+      const scaleX = viewportRect.width / state.width;
+      const scaleY = viewportRect.height / state.height;
+      state.zoom = clamp(Math.min(scaleX, scaleY), state.minZoom, state.maxZoom);
+      const scaledWidth = state.width * state.zoom;
+      const scaledHeight = state.height * state.zoom;
+      state.offsetX = (viewportRect.width - scaledWidth) / 2;
+      state.offsetY = (viewportRect.height - scaledHeight) / 2;
+      setCanvasTransform();
+    }
+
+    function zoomAtClientPoint(clientX, clientY, factor) {
+      if (!state.width || !state.height) return;
+      const viewportRect = els.viewport.getBoundingClientRect();
+      if (!viewportRect.width || !viewportRect.height) return;
+      const beforeX = (clientX - viewportRect.left - state.offsetX) / state.zoom;
+      const beforeY = (clientY - viewportRect.top - state.offsetY) / state.zoom;
+      const oldZoom = state.zoom;
+      const newZoom = clamp(state.zoom * factor, state.minZoom, state.maxZoom);
+      if (newZoom === oldZoom) return;
+      state.zoom = newZoom;
+      state.offsetX = clientX - viewportRect.left - beforeX * state.zoom;
+      state.offsetY = clientY - viewportRect.top - beforeY * state.zoom;
+      clampOffsets();
+      setCanvasTransform();
+    }
+
+    function refreshControlDropdowns() {
+      populateSelect(els.regionControl, controlTypes);
+      if (state.selectedRegionId) {
+        const region = state.regions.get(state.selectedRegionId);
+        if (region && controlTypes.includes(region.control)) els.regionControl.value = region.control;
+      }
+      renderControlsEditor();
+    }
+
+    function initStaticUI() {
+      populateSelect(els.regionLand, LAND_TYPES);
+      refreshControlDropdowns();
+      populateSelect(els.regionStatus, STATUS_TYPES);
+      for (const key of ['mapPopulationSource', 'mapContentSource', 'mapParamASource', 'mapParamBSource', 'mapParamCSource', 'mapParamDSource', 'mapWaterSource']) populateSelect(els[key], CHANNEL_OPTIONS);
+      for (const key of ['mapPopulationMode', 'mapContentMode', 'mapParamAMode', 'mapParamBMode', 'mapParamCMode', 'mapParamDMode']) populateSelect(els[key], MODE_OPTIONS);
+      els.mapPopulationSource.value = 'none';
+      els.mapContentSource.value = 'brightness';
+      els.mapParamASource.value = 'red';
+      els.mapParamBSource.value = 'green';
+      els.mapParamCSource.value = 'blue';
+      els.mapParamDSource.value = 'alpha';
+      els.mapWaterSource.value = 'none';
+      els.mapPopulationMode.value = 'linear';
+      els.mapContentMode.value = 'linear';
+      els.mapParamAMode.value = 'linear';
+      els.mapParamBMode.value = 'linear';
+      els.mapParamCMode.value = 'linear';
+      els.mapParamDMode.value = 'linear';
+      renderDefaultParamsEditor();
+      renderExtraFieldsEditor(null);
+    }
+
+    function renderControlsEditor() {
+      els.controlsContainer.innerHTML = '';
+      if (!controlTypes.length) {
+        els.controlsContainer.innerHTML = '<div class="muted small">No control factions.</div>';
+        return;
+      }
+      controlTypes.forEach((name, index) => {
+        const card = document.createElement('div');
+        card.className = 'control-card';
+        const protectedFaction = name === 'Neutral';
+        card.innerHTML = `<div class="control-head"><strong>${escapeHtml(name)}</strong><button type="button" class="danger" data-remove-control="${index}" ${protectedFaction ? 'disabled' : ''}>Remove</button></div>`;
+        els.controlsContainer.appendChild(card);
+      });
+      els.controlsContainer.querySelectorAll('[data-remove-control]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const i = toInt(btn.dataset.removeControl, -1);
+          if (i < 0 || i >= controlTypes.length) return;
+          const removed = controlTypes[i];
+          if (removed === 'Neutral') return;
+          controlTypes.splice(i, 1);
+          for (const region of state.regions.values()) if (region.control === removed) region.control = 'Neutral';
+          refreshControlDropdowns();
+          syncSelectedRegionUI();
+          setStatus(`Removed control faction ${removed}.`);
+        });
+      });
+    }
+
+    function addControlFaction(name) {
+      const clean = String(name || '').trim();
+      if (!clean) { setStatus('Enter a control faction name first.'); return; }
+      if (controlTypes.includes(clean)) { setStatus('That control faction already exists.'); return; }
+      controlTypes.push(clean);
+      els.newControlName.value = '';
+      refreshControlDropdowns();
+      setStatus(`Added control faction ${clean}.`);
+    }
+
+    function renderDefaultParamsEditor() {
+      els.defaultParamsContainer.innerHTML = '';
+      if (!state.extraDefaultParams.length) {
+        els.defaultParamsContainer.innerHTML = '<div class="muted small">No extra default parameters yet.</div>';
+        return;
+      }
+      state.extraDefaultParams.forEach((param, index) => {
+        const card = document.createElement('div');
+        card.className = 'default-param-card';
+        card.innerHTML = `<div class="default-param-head"><strong>Default ${index + 1}</strong><button type="button" class="danger" data-remove-default="${index}">Remove</button></div><div class="row"><div><label>Key</label><input type="text" data-default-field="key" data-default-index="${index}" value="${escapeHtml(param.key)}" placeholder="ExampleField" /></div><div><label>Default value</label><input type="text" data-default-field="defaultValue" data-default-index="${index}" value="${escapeHtml(param.defaultValue)}" placeholder="Default text" /></div></div>`;
+        els.defaultParamsContainer.appendChild(card);
+      });
+      els.defaultParamsContainer.querySelectorAll('[data-default-field]').forEach(el => {
+        el.addEventListener('input', evt => {
+          const i = toInt(evt.target.dataset.defaultIndex, -1);
+          const field = evt.target.dataset.defaultField;
+          if (i < 0 || !state.extraDefaultParams[i]) return;
+          state.extraDefaultParams[i][field] = evt.target.value;
+          renderExtraFieldsEditor(state.selectedRegionId ? state.regions.get(state.selectedRegionId) : null);
+        });
+      });
+      els.defaultParamsContainer.querySelectorAll('[data-remove-default]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const i = toInt(btn.dataset.removeDefault, -1);
+          if (i < 0) return;
+          const removedKey = sanitizeKey(state.extraDefaultParams[i].key);
+          state.extraDefaultParams.splice(i, 1);
+          for (const region of state.regions.values()) if (region.extraFields) delete region.extraFields[removedKey];
+          renderDefaultParamsEditor();
+          renderExtraFieldsEditor(state.selectedRegionId ? state.regions.get(state.selectedRegionId) : null);
+          setStatus('Removed default parameter.');
+        });
+      });
+    }
+
+    function applyDefaultParamsToExisting() {
+      const defaults = getExtraDefaultsObject();
+      for (const region of state.regions.values()) {
+        if (!region.extraFields) region.extraFields = {};
+        for (const [key, value] of Object.entries(defaults)) if (!(key in region.extraFields)) region.extraFields[key] = value;
+      }
+      renderExtraFieldsEditor(state.selectedRegionId ? state.regions.get(state.selectedRegionId) : null);
+      setStatus('Applied extra default parameters to existing regions.');
+    }
+
+    async function handlePrimaryImageUpload(file) {
+      if (!file) return;
+      state.imageName = file.name.replace(/\.[^.]+$/, '') || 'map';
+      const bitmap = await createImageBitmap(file);
+      state.imageBitmap = bitmap;
+      state.width = bitmap.width;
+      state.height = bitmap.height;
+      els.mapCanvas.width = bitmap.width;
+      els.mapCanvas.height = bitmap.height;
+      ctx.clearRect(0, 0, bitmap.width, bitmap.height);
+      ctx.drawImage(bitmap, 0, 0);
+      state.imageData = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+      buildBinaryMask();
+      clearRegions();
+      drawMaskPreview();
+      requestAnimationFrame(() => fitCanvasToViewport());
+      updateStats();
+      setStatus(`Loaded primary image ${bitmap.width}×${bitmap.height}.`);
+      if (state.paramImageData && (state.paramImageData.width !== state.width || state.paramImageData.height !== state.height)) {
+        state.paramImageBitmap = null;
+        state.paramImageData = null;
+        state.paramImageName = '';
+        els.paramImageInput.value = '';
+        setStatus('Loaded primary image. Existing parameter map was cleared because dimensions did not match.');
+      }
+    }
+
+    async function handleParameterImageUpload(file) {
+      if (!file) return;
+      const bitmap = await createImageBitmap(file);
+      if (!state.imageData) { setStatus('Load the primary image first.'); return; }
+      if (bitmap.width !== state.width || bitmap.height !== state.height) { setStatus('Parameter map must have the same dimensions as the primary image.'); return; }
+      const off = document.createElement('canvas');
+      off.width = bitmap.width;
+      off.height = bitmap.height;
+      const offCtx = off.getContext('2d', { willReadFrequently: true });
+      offCtx.drawImage(bitmap, 0, 0);
+      state.paramImageBitmap = bitmap;
+      state.paramImageData = offCtx.getImageData(0, 0, bitmap.width, bitmap.height);
+      state.paramImageName = file.name.replace(/\.[^.]+$/, '') || 'param_map';
+      setStatus(`Loaded parameter map ${bitmap.width}×${bitmap.height}.`);
+      if (state.regions.size) applyParameterMapToRegions();
+    }
+
+    function buildBinaryMask() {
+      if (!state.imageData) return;
+      const { data, width, height } = state.imageData;
+      const threshold = clamp(toInt(els.whiteThreshold.value, 200), 0, 255);
+      const mask = createEmptyTypedArray(width, height, 'uint8', 0);
+      const whitePixels = [];
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const i = (y * width + x) * 4;
+        const brightness = (data[i] + data[i+1] + data[i+2]) / 3;
+        const white = data[i+3] > 0 && brightness >= threshold;
+        const p = idx(x, y, width);
+        mask[p] = white ? 1 : 0;
+        if (white) whitePixels.push(p);
+      }
+      state.binaryMask = mask;
+      state.whitePixels = whitePixels;
+    }
+
+    function clearRegions() {
+      state.regionIdMap = createEmptyTypedArray(state.width || 1, state.height || 1, 'int32', -1);
+      state.borderMap = createEmptyTypedArray(state.width || 1, state.height || 1, 'uint8', 0);
+      state.regions = new Map();
+      state.selectedRegionId = null;
+      state.hoverRegionId = null;
+      state.mergeMode = false;
+      state.nextRegionId = 1;
+      updateMergeButtons();
+      syncSelectedRegionUI();
+    }
+
+    function drawMaskPreview() {
+      if (!state.binaryMask || !state.width || !state.height) return;
+      const out = new ImageData(state.width, state.height);
+      for (let y = 0; y < state.height; y++) for (let x = 0; x < state.width; x++) {
+        const p = idx(x, y, state.width), o = p * 4;
+        const v = state.binaryMask[p] === 1 ? 245 : 0;
+        out.data[o] = v;
+        out.data[o+1] = v;
+        out.data[o+2] = v;
+        out.data[o+3] = 255;
+      }
+      ctx.putImageData(out, 0, 0);
+      setCanvasTransform();
+    }
+
+    function getConnectedComponents(mask, width, height) {
+      const visited = createEmptyTypedArray(width, height, 'uint8', 0);
+      const components = [];
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const start = idx(x, y, width);
+        if (!mask[start] || visited[start]) continue;
+        const queue = [start];
+        visited[start] = 1;
+        const pixels = [];
+        let minX = x, minY = y, maxX = x, maxY = y;
+        while (queue.length) {
+          const current = queue.pop();
+          pixels.push(current);
+          const cy = Math.floor(current / width);
+          const cx = current - cy * width;
+          if (cx < minX) minX = cx;
+          if (cy < minY) minY = cy;
+          if (cx > maxX) maxX = cx;
+          if (cy > maxY) maxY = cy;
+          for (const [dx, dy] of dirs) {
+            const nx = cx + dx, ny = cy + dy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+            const np = idx(nx, ny, width);
+            if (!mask[np] || visited[np]) continue;
+            visited[np] = 1;
+            queue.push(np);
+          }
+        }
+        components.push({ pixels, minX, minY, maxX, maxY, area: pixels.length });
+      }
+      return components;
+    }
+
+    function pickSeedsForComponent(component, seedCount, width) {
+      const seeds = [];
+      const pixels = component.pixels;
+      if (!pixels.length || seedCount <= 0) return seeds;
+      const cols = Math.max(1, Math.round(Math.sqrt(seedCount)));
+      const rows = Math.max(1, Math.ceil(seedCount / cols));
+      const boxW = Math.max(1, component.maxX - component.minX + 1);
+      const boxH = Math.max(1, component.maxY - component.minY + 1);
+      const cellW = boxW / cols;
+      const cellH = boxH / rows;
+      const set = new Set();
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        if (seeds.length >= seedCount) break;
+        const startX = Math.floor(component.minX + c * cellW);
+        const endX = Math.floor(component.minX + (c + 1) * cellW - 1);
+        const startY = Math.floor(component.minY + r * cellH);
+        const endY = Math.floor(component.minY + (r + 1) * cellH - 1);
+        const candidates = [];
+        for (const p of pixels) {
+          const y = Math.floor(p / width);
+          const x = p - y * width;
+          if (x >= startX && x <= endX && y >= startY && y <= endY) candidates.push(p);
+        }
+        if (candidates.length) {
+          const chosen = candidates[randomInt(0, candidates.length - 1)];
+          if (!set.has(chosen)) { set.add(chosen); seeds.push(chosen); }
+        }
+      }
+      while (seeds.length < seedCount && seeds.length < pixels.length) {
+        const p = pixels[randomInt(0, pixels.length - 1)];
+        if (!set.has(p)) { set.add(p); seeds.push(p); }
+      }
+      return seeds;
+    }
+
+    function allocateSeedCounts(components, requestedTotalSeeds, minRegionPixels) {
+      const eligible = components.filter(c => c.area >= minRegionPixels);
+      if (!eligible.length) return [];
+      const totalArea = eligible.reduce((sum, c) => sum + c.area, 0);
+      const allocations = eligible.map(c => {
+        const boxW = c.maxX - c.minX + 1;
+        const boxH = c.maxY - c.minY + 1;
+        const boxArea = boxW * boxH;
+        const spread = Math.max(boxW, boxH) / Math.max(1, Math.min(boxW, boxH));
+        const compactnessPenalty = Math.max(1, boxArea / Math.max(1, c.area));
+        let seeds = Math.max(1, Math.round((c.area / totalArea) * requestedTotalSeeds));
+        if (c.area >= minRegionPixels * 8) seeds = Math.max(seeds, 2);
+        if (c.area >= minRegionPixels * 20) seeds = Math.max(seeds, 3);
+        if (spread >= 2.25 && c.area >= minRegionPixels * 6) seeds = Math.max(seeds, 2);
+        if (spread >= 3.5 && c.area >= minRegionPixels * 12) seeds = Math.max(seeds, 3);
+        if (compactnessPenalty >= 1.8 && c.area >= minRegionPixels * 10) seeds = Math.max(seeds, 2);
+        return { component: c, seeds: Math.min(seeds, c.area) };
+      });
+      let currentTotal = allocations.reduce((sum, a) => sum + a.seeds, 0);
+      while (currentTotal > requestedTotalSeeds && allocations.length > 1) {
+        const candidate = allocations.filter(a => a.seeds > 1).sort((a, b) => (b.seeds - a.seeds) || (a.component.area - b.component.area))[0];
+        if (!candidate) break;
+        candidate.seeds -= 1;
+        currentTotal -= 1;
+      }
+      while (currentTotal < requestedTotalSeeds) {
+        allocations.sort((a, b) => (b.component.area / Math.max(1, b.seeds)) - (a.component.area / Math.max(1, a.seeds)));
+        allocations[0].seeds += 1;
+        currentTotal += 1;
+      }
+      return allocations;
+    }
+
+    function makeSeedJitter(id, mode) {
+      const frac1 = ((Math.sin(id * 91.173 + 17.37) * 43758.5453) % 1 + 1) % 1;
+      const frac2 = ((Math.sin(id * 51.91 + 7.13) * 15731.743) % 1 + 1) % 1;
+      const frac3 = ((Math.sin(id * 11.07 + 3.31) * 9137.113) % 1 + 1) % 1;
+      if (mode === 'complex') return { x: (frac1 - 0.5) * 8, y: (frac2 - 0.5) * 8, noise: (frac3 - 0.5) * 18 };
+      if (mode === 'box') return { x: (frac1 - 0.5) * 3, y: (frac2 - 0.5) * 3, noise: (frac3 - 0.5) * 4 };
+      return { x: 0, y: 0, noise: 0 };
+    }
+
+    function getDistanceScore(px, py, seed, mode) {
+      const sx = seed.x + seed.jitter.x;
+      const sy = seed.y + seed.jitter.y;
+      const dx = px - sx;
+      const dy = py - sy;
+      if (mode === 'box') {
+        const manhattan = Math.abs(dx) + Math.abs(dy);
+        const chebyshev = Math.max(Math.abs(dx), Math.abs(dy));
+        return manhattan * 1.15 + chebyshev * 0.85 + seed.jitter.noise;
+      }
+      if (mode === 'complex') {
+        const euclidean = dx * dx + dy * dy;
+        const wave = Math.sin((px + seed.id * 13) * 0.085) * 6 + Math.cos((py - seed.id * 7) * 0.09) * 6;
+        return euclidean + seed.jitter.noise * 10 + wave;
+      }
+      return dx * dx + dy * dy;
+    }
+
+    function generateRegions() {
+      if (!state.imageData) { setStatus('Load a primary image first.'); return; }
+      buildBinaryMask();
+      clearRegions();
+      const width = state.width;
+      const height = state.height;
+      const requestedSeeds = clamp(toInt(els.seedCount.value, 80), 1, 2000);
+      const minRegionPixels = Math.max(1, toInt(els.minRegionPixels.value, 30));
+      const oceanGridSize = Math.max(1, toInt(els.oceanGridSize.value, 32));
+      const mode = els.seedMode.value;
+      const components = getConnectedComponents(state.binaryMask, width, height);
+      const allocations = allocateSeedCounts(components, requestedSeeds, minRegionPixels);
+      if (!allocations.length && state.whitePixels.length) {
+        drawMaskPreview();
+        setStatus('No white components large enough for land region generation.');
+        updateStats();
+        return;
+      }
+      for (const entry of allocations) {
+        const component = entry.component;
+        const seeds = pickSeedsForComponent(component, entry.seeds, width);
+        if (!seeds.length) continue;
+        const seedInfo = seeds.map(p => {
+          const y = Math.floor(p / width);
+          const x = p - y * width;
+          const id = state.nextRegionId++;
+          state.regions.set(id, makeDefaultRegion(id, x, y, false));
+          return { id, x, y, jitter: makeSeedJitter(id, mode) };
+        });
+        for (const p of component.pixels) {
+          const py = Math.floor(p / width);
+          const px = p - py * width;
+          let bestRegionId = seedInfo[0].id;
+          let bestScore = Infinity;
+          for (const seed of seedInfo) {
+            const score = getDistanceScore(px, py, seed, mode);
+            if (score < bestScore) {
+              bestScore = score;
+              bestRegionId = seed.id;
+            }
+          }
+          state.regionIdMap[p] = bestRegionId;
+          state.regions.get(bestRegionId).area += 1;
+        }
+      }
+      pruneTinyRegions(minRegionPixels);
+      splitOversizedRegions(minRegionPixels, mode);
+      addOceanGridRegions(oceanGridSize);
+      computeBorders();
+      if (state.paramImageData) applyParameterMapToRegions(false);
+      drawRegions();
+      updateStats();
+      setStatus(`Generated ${state.regions.size} regions.`);
+    }
+
+    function addOceanGridRegions(gridSize) {
+      if (!state.binaryMask) return;
+      const width = state.width;
+      const height = state.height;
+      const oceanRegionIds = new Map();
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const p = idx(x, y, width);
+        if (state.binaryMask[p] === 1) continue;
+        const cellX = Math.floor(x / gridSize);
+        const cellY = Math.floor(y / gridSize);
+        const key = `${cellX},${cellY}`;
+        let regionId = oceanRegionIds.get(key);
+        if (!regionId) {
+          regionId = state.nextRegionId++;
+          state.regions.set(regionId, makeDefaultRegion(regionId, cellX * gridSize, cellY * gridSize, true));
+          oceanRegionIds.set(key, regionId);
+        }
+        state.regionIdMap[p] = regionId;
+        state.regions.get(regionId).area += 1;
+      }
+    }
+
+    function pruneTinyRegions(minRegionPixels) {
+      const landRegions = Array.from(state.regions.values()).filter(r => !r.isOcean);
+      if (!landRegions.length) return;
+      const tiny = landRegions.filter(r => r.area < minRegionPixels).map(r => r.id);
+      if (!tiny.length) return;
+      const width = state.width;
+      const height = state.height;
+      const tinySet = new Set(tiny);
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const p = idx(x, y, width);
+        const rid = state.regionIdMap[p];
+        if (!tinySet.has(rid)) continue;
+        const neighborCounts = new Map();
+        for (const [dx, dy] of dirs) {
+          const nx = x + dx, ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const np = idx(nx, ny, width);
+          const nr = state.regionIdMap[np];
+          const neighborRegion = state.regions.get(nr);
+          if (nr !== -1 && nr !== rid && neighborRegion && !neighborRegion.isOcean && !tinySet.has(nr)) {
+            neighborCounts.set(nr, (neighborCounts.get(nr) || 0) + 1);
+          }
+        }
+        if (neighborCounts.size) {
+          let bestId = -1;
+          let bestCount = -1;
+          for (const [nr, count] of neighborCounts.entries()) {
+            if (count > bestCount) { bestCount = count; bestId = nr; }
+          }
+          state.regionIdMap[p] = bestId;
+        }
+      }
+      for (const region of state.regions.values()) region.area = 0;
+      for (let p = 0; p < state.regionIdMap.length; p++) {
+        const rid = state.regionIdMap[p];
+        if (rid !== -1 && state.regions.has(rid)) state.regions.get(rid).area += 1;
+      }
+      for (const id of tiny) {
+        if ((state.regions.get(id)?.area || 0) === 0) {
+          state.regions.delete(id);
+          if (state.selectedRegionId === id) state.selectedRegionId = null;
+        }
+      }
+    }
+
+    function splitOversizedRegions(minRegionPixels, mode) {
+      const landRegions = Array.from(state.regions.values()).filter(r => !r.isOcean);
+      if (!state.regionIdMap || !landRegions.length) return;
+      const width = state.width;
+      const height = state.height;
+      const areas = landRegions.map(r => r.area).filter(a => a > 0).sort((a, b) => a - b);
+      if (!areas.length) return;
+      const medianArea = areas[Math.floor(areas.length / 2)];
+      const oversized = landRegions.filter(r => r.area > Math.max(minRegionPixels * 6, medianArea * 2.6));
+      for (const region of oversized) {
+        const pixels = [];
+        let minX = width, minY = height, maxX = 0, maxY = 0;
+        for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+          const p = idx(x, y, width);
+          if (state.regionIdMap[p] !== region.id) continue;
+          pixels.push(p);
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+        if (pixels.length <= Math.max(minRegionPixels * 4, medianArea * 1.8)) continue;
+        const splits = Math.min(4, Math.max(2, Math.round(pixels.length / Math.max(medianArea, minRegionPixels * 3))));
+        const component = { pixels, minX, minY, maxX, maxY, area: pixels.length };
+        const seeds = pickSeedsForComponent(component, splits, width);
+        if (seeds.length < 2) continue;
+        state.regions.delete(region.id);
+        const seedInfo = seeds.map((p, i) => {
+          const y = Math.floor(p / width);
+          const x = p - y * width;
+          const id = state.nextRegionId++;
+          const newRegion = { ...region, id, seed: [x, y], area: 0, color: regionColorFromId(id, false), name: `${region.name}.${i + 1}` };
+          state.regions.set(id, newRegion);
+          return { id, x, y, jitter: makeSeedJitter(id, mode) };
+        });
+        for (const p of pixels) {
+          const py = Math.floor(p / width);
+          const px = p - py * width;
+          let best = seedInfo[0].id;
+          let bestScore = Infinity;
+          for (const seed of seedInfo) {
+            const score = getDistanceScore(px, py, seed, mode);
+            if (score < bestScore) { bestScore = score; best = seed.id; }
+          }
+          state.regionIdMap[p] = best;
+          state.regions.get(best).area += 1;
+        }
+        if (state.selectedRegionId === region.id) state.selectedRegionId = null;
+      }
+    }
+
+    function computeBorders() {
+      const width = state.width;
+      const height = state.height;
+      const borderMap = createEmptyTypedArray(width, height, 'uint8', 0);
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const p = idx(x, y, width);
+        const rid = state.regionIdMap[p];
+        if (rid === -1) continue;
+        const neighbors = [
+          x > 0 ? state.regionIdMap[idx(x - 1, y, width)] : -2,
+          x < width - 1 ? state.regionIdMap[idx(x + 1, y, width)] : -2,
+          y > 0 ? state.regionIdMap[idx(x, y - 1, width)] : -2,
+          y < height - 1 ? state.regionIdMap[idx(x, y + 1, width)] : -2
+        ];
+        if (neighbors.some(n => n !== rid)) borderMap[p] = 1;
+      }
+      state.borderMap = borderMap;
+    }
+
+    function drawRegions() {
+      const width = state.width;
+      const height = state.height;
+      const out = new ImageData(width, height);
+      const selected = state.selectedRegionId;
+      const hovered = state.hoverRegionId;
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const p = idx(x, y, width);
+        const o = p * 4;
+        const rid = state.regionIdMap[p];
+        if (rid === -1) {
+          out.data[o] = 0; out.data[o + 1] = 0; out.data[o + 2] = 0; out.data[o + 3] = 255;
+          continue;
+        }
+        if (state.borderMap[p]) {
+          out.data[o] = 255; out.data[o + 1] = 255; out.data[o + 2] = 255; out.data[o + 3] = 255;
+          continue;
+        }
+        const region = state.regions.get(rid);
+        const { r, g, b } = hexToRgb(region.color);
+        const bump = selected === rid ? 35 : (hovered === rid ? 22 : 0);
+        out.data[o] = clamp(r + bump, 0, 255);
+        out.data[o + 1] = clamp(g + bump, 0, 255);
+        out.data[o + 2] = clamp(b + bump, 0, 255);
+        out.data[o + 3] = 255;
+      }
+      ctx.putImageData(out, 0, 0);
+      setCanvasTransform();
+    }
+
+    function getRegionAtCanvasEvent(evt) {
+      if (!state.regionIdMap || !state.width || !state.height) return -1;
+      const viewportRect = els.viewport.getBoundingClientRect();
+      const imageX = (evt.clientX - viewportRect.left - state.offsetX) / state.zoom;
+      const imageY = (evt.clientY - viewportRect.top - state.offsetY) / state.zoom;
+      const x = Math.floor(imageX);
+      const y = Math.floor(imageY);
+      if (x < 0 || y < 0 || x >= state.width || y >= state.height) return -1;
+      return state.regionIdMap[idx(x, y, state.width)];
+    }
+    function updateMergeButtons() {
+      els.mergeModeBtn.textContent = state.mergeMode ? 'Merge mode: On' : 'Merge mode: Off';
+      els.mergeModeBtn.disabled = !state.selectedRegionId;
+      els.cancelMergeBtn.disabled = !state.mergeMode;
+    }
+
+    function renderExtraFieldsEditor(region) {
+      els.extraFieldsContainer.innerHTML = '';
+      if (!state.extraDefaultParams.length) return;
+
+      state.extraDefaultParams.forEach(def => {
+        const key = sanitizeKey(def.key);
+        if (!key) return;
+        const value = region ? (region.extraFields?.[key] ?? '') : '';
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = `
+          <label for="extra_${key}">${escapeHtml(key)}</label>
+          <input
+            id="extra_${key}"
+            type="text"
+            data-extra-key="${escapeHtml(key)}"
+            value="${escapeHtml(value)}"
+            placeholder="${escapeHtml(def.defaultValue || '')}"
+          />
+        `;
+        els.extraFieldsContainer.appendChild(wrapper);
+      });
+    }
+
+    function syncSelectedRegionUI() {
+      const region = state.selectedRegionId ? state.regions.get(state.selectedRegionId) : null;
+      renderExtraFieldsEditor(region);
+
+      if (!region) {
+        els.selectionSummary.innerHTML = '<span class="muted">No region selected.</span>';
+        els.regionName.value = '';
+        els.regionLand.value = 'Grass';
+        els.regionControl.value = 'Neutral';
+        els.regionWater.value = 'false';
+        els.regionStatus.value = 'Rural';
+        els.regionElevation.value = 0;
+        els.regionPopulation.value = 0;
+        els.regionTaxPerc.value = 20;
+        els.regionContent.value = 30;
+        els.regionParamA.value = 0;
+        els.regionParamB.value = 0;
+        els.regionParamC.value = 0;
+        els.regionParamD.value = 0;
+        els.regionNotes.value = '';
+        els.regionColor.value = '#5da9ff';
+        updateMergeButtons();
+        updateStats();
+        return;
+      }
+
+      const mergeText = state.mergeMode
+        ? '<br><span class="small" style="color:#fde68a;">Merge mode active: click another region to merge it into this one.</span>'
+        : '';
+      const oceanText = region.isOcean ? ' • ocean' : ' • land';
+
+      els.selectionSummary.innerHTML =
+        `<span class="selected-box" style="background:${region.color}"></span>` +
+        `<strong>${escapeHtml(region.name)}</strong><br>` +
+        `<span class="small muted">ID ${region.id} • area ${region.area} px${oceanText} • seed (${region.seed[0]}, ${region.seed[1]})</span>${mergeText}`;
+
+      els.regionName.value = region.name;
+      els.regionLand.value = region.land;
+      els.regionControl.value = controlTypes.includes(region.control) ? region.control : 'Neutral';
+      els.regionWater.value = String(region.water);
+      els.regionStatus.value = region.status;
+      els.regionElevation.value = region.elevation;
+      els.regionPopulation.value = region.population;
+      els.regionTaxPerc.value = region.taxPerc;
+      els.regionContent.value = region.content;
+      els.regionParamA.value = region.paramA;
+      els.regionParamB.value = region.paramB;
+      els.regionParamC.value = region.paramC;
+      els.regionParamD.value = region.paramD;
+      els.regionNotes.value = region.notes;
+      els.regionColor.value = region.color;
+
+      updateMergeButtons();
+      updateStats();
+    }
+
+    function collectExtraFieldValues() {
+      const result = {};
+      els.extraFieldsContainer.querySelectorAll('[data-extra-key]').forEach(input => {
+        result[input.dataset.extraKey] = input.value;
+      });
+      return result;
+    }
+
+    function saveSelectedRegion() {
+      if (!state.selectedRegionId) {
+        setStatus('Select a region first.');
+        return;
+      }
+
+      const region = state.regions.get(state.selectedRegionId);
+      region.name = els.regionName.value.trim() || (region.isOcean ? `Ocean ${region.id}` : `Region ${region.id}`);
+      region.land = region.isOcean ? 'Ocean' : els.regionLand.value;
+      region.control = controlTypes.includes(els.regionControl.value) ? els.regionControl.value : 'Neutral';
+      region.water = region.isOcean ? true : els.regionWater.value === 'true';
+      region.status = els.regionStatus.value;
+      region.elevation = Math.max(0, toInt(els.regionElevation.value, 0));
+      region.population = Math.max(0, toInt(els.regionPopulation.value, 0));
+      region.taxPerc = toInt(els.regionTaxPerc.value, 20);
+      region.content = toInt(els.regionContent.value, 30);
+      region.paramA = toInt(els.regionParamA.value, 0);
+      region.paramB = toInt(els.regionParamB.value, 0);
+      region.paramC = toInt(els.regionParamC.value, 0);
+      region.paramD = toInt(els.regionParamD.value, 0);
+      region.extraFields = collectExtraFieldValues();
+      region.notes = els.regionNotes.value;
+      region.color = els.regionColor.value;
+
+      syncSelectedRegionUI();
+      drawRegions();
+      setStatus(`Saved region ${region.id}.`);
+    }
+
+    function resetSelectedRegion() {
+      if (!state.selectedRegionId) return;
+
+      const region = state.regions.get(state.selectedRegionId);
+      const fresh = makeDefaultRegion(region.id, region.seed[0], region.seed[1], region.isOcean);
+
+      region.name = fresh.name;
+      region.land = fresh.land;
+      region.control = fresh.control;
+      region.water = fresh.water;
+      region.elevation = fresh.elevation;
+      region.status = fresh.status;
+      region.population = fresh.population;
+      region.taxPerc = fresh.taxPerc;
+      region.content = fresh.content;
+      region.paramA = fresh.paramA;
+      region.paramB = fresh.paramB;
+      region.paramC = fresh.paramC;
+      region.paramD = fresh.paramD;
+      region.extraFields = { ...fresh.extraFields };
+      region.notes = fresh.notes;
+      region.color = fresh.color;
+
+      if (state.paramImageData && !region.isOcean) applyParameterMapToRegions(false);
+
+      syncSelectedRegionUI();
+      drawRegions();
+      setStatus(`Reset region ${region.id}.`);
+    }
+
+    function getChannelValueAt(data, p, source) {
+      const o = p * 4;
+      const r = data[o];
+      const g = data[o + 1];
+      const b = data[o + 2];
+      const a = data[o + 3];
+
+      switch (source) {
+        case 'red': return r;
+        case 'green': return g;
+        case 'blue': return b;
+        case 'alpha': return a;
+        case 'brightness': return Math.round((r + g + b) / 3);
+        default: return null;
+      }
+    }
+
+    function transformNormalizedValue(normalized, mode) {
+      if (mode === 'quadratic') return normalized * normalized;
+      if (mode === 'inverseQuadratic') return Math.sqrt(normalized);
+      return normalized;
+    }
+
+    function getParameterMapConfig() {
+      return {
+        population: {
+          source: els.mapPopulationSource.value,
+          mode: els.mapPopulationMode.value,
+          max: Math.max(0, toInt(els.mapPopulationMax.value, 1000))
+        },
+        content: {
+          source: els.mapContentSource.value,
+          mode: els.mapContentMode.value,
+          max: Math.max(0, toInt(els.mapContentMax.value, 100))
+        },
+        paramA: {
+          source: els.mapParamASource.value,
+          mode: els.mapParamAMode.value,
+          max: Math.max(0, toInt(els.mapParamAMax.value, 100))
+        },
+        paramB: {
+          source: els.mapParamBSource.value,
+          mode: els.mapParamBMode.value,
+          max: Math.max(0, toInt(els.mapParamBMax.value, 100))
+        },
+        paramC: {
+          source: els.mapParamCSource.value,
+          mode: els.mapParamCMode.value,
+          max: Math.max(0, toInt(els.mapParamCMax.value, 100))
+        },
+        paramD: {
+          source: els.mapParamDSource.value,
+          mode: els.mapParamDMode.value,
+          max: Math.max(0, toInt(els.mapParamDMax.value, 100))
+        },
+        water: {
+          source: els.mapWaterSource.value,
+          threshold: clamp(toInt(els.mapWaterThreshold.value, 160), 0, 255)
+        }
+      };
+    }
+
+    function applyParameterMapToRegions(showStatus = true) {
+      if (!state.paramImageData) {
+        setStatus('No parameter map loaded.');
+        return;
+      }
+
+      const landRegions = Array.from(state.regions.values()).filter(r => !r.isOcean);
+      if (!landRegions.length) {
+        setStatus('Generate land regions before applying the parameter map.');
+        return;
+      }
+
+      const config = getParameterMapConfig();
+      const channelData = state.paramImageData.data;
+      const stats = new Map();
+
+      for (const region of landRegions) {
+        stats.set(region.id, {
+          count: 0,
+          sums: {
+            population: 0,
+            content: 0,
+            paramA: 0,
+            paramB: 0,
+            paramC: 0,
+            paramD: 0,
+            water: 0
+          }
+        });
+      }
+
+      for (let p = 0; p < state.regionIdMap.length; p++) {
+        const rid = state.regionIdMap[p];
+        if (rid === -1 || !stats.has(rid)) continue;
+
+        const regionStats = stats.get(rid);
+        regionStats.count += 1;
+
+        for (const field of ['population', 'content', 'paramA', 'paramB', 'paramC', 'paramD']) {
+          const source = config[field].source;
+          if (source === 'none') continue;
+          const value = getChannelValueAt(channelData, p, source);
+          if (value !== null) regionStats.sums[field] += value;
+        }
+
+        if (config.water.source !== 'none') {
+          const value = getChannelValueAt(channelData, p, config.water.source);
+          if (value !== null) regionStats.sums.water += value;
+        }
+      }
+
+      for (const region of landRegions) {
+        const s = stats.get(region.id);
+        if (!s || !s.count) continue;
+
+        for (const field of ['population', 'content', 'paramA', 'paramB', 'paramC', 'paramD']) {
+          const cfg = config[field];
+          if (cfg.source === 'none') continue;
+
+          const avg = s.sums[field] / s.count;
+          const normalized = clamp(avg / 255, 0, 1);
+          const transformed = transformNormalizedValue(normalized, cfg.mode);
+          region[field] = Math.round(transformed * cfg.max);
+        }
+
+        if (config.water.source !== 'none') {
+          region.water = (s.sums.water / s.count) >= config.water.threshold;
+        }
+      }
+
+      syncSelectedRegionUI();
+      drawRegions();
+      if (showStatus) setStatus('Applied parameter map to land regions.');
+    }
+
+    function clearParameterMap() {
+      state.paramImageBitmap = null;
+      state.paramImageData = null;
+      state.paramImageName = '';
+      els.paramImageInput.value = '';
+      setStatus('Cleared parameter map.');
+    }
+
+    function mergeRegionIntoSelected(sourceId) {
+      const targetId = state.selectedRegionId;
+      if (!targetId || !sourceId || targetId === sourceId) return;
+
+      const target = state.regions.get(targetId);
+      const source = state.regions.get(sourceId);
+      if (!target || !source) return;
+
+      for (let p = 0; p < state.regionIdMap.length; p++) {
+        if (state.regionIdMap[p] === sourceId) state.regionIdMap[p] = targetId;
+      }
+
+      target.area += source.area;
+      state.regions.delete(sourceId);
+
+      if (target.isOcean) {
+        target.land = 'Ocean';
+        target.water = true;
+      }
+
+      state.hoverRegionId = null;
+      state.mergeMode = false;
+      computeBorders();
+      syncSelectedRegionUI();
+      drawRegions();
+      setStatus(`Merged region ${sourceId} into region ${targetId}.`);
+    }
+
+    function buildExportObject() {
+      const regions = Array.from(state.regions.values())
+        .filter(r => r.area > 0)
+        .sort((a, b) => a.id - b.id)
+        .map(region => ({
+          id: region.id,
+          name: region.name,
+          land: region.land,
+          control: region.control,
+          water: region.water,
+          elevation: region.elevation,
+          status: region.status,
+          population: region.population,
+          taxPerc: region.taxPerc,
+          content: region.content,
+          paramA: region.paramA,
+          paramB: region.paramB,
+          paramC: region.paramC,
+          paramD: region.paramD,
+          ...region.extraFields,
+          color: region.color,
+          seed: region.seed,
+          area: region.area,
+          notes: region.notes,
+          isOcean: region.isOcean
+        }));
+
+      return {
+        image: {
+          name: state.imageName,
+          width: state.width,
+          height: state.height,
+          white_threshold: toInt(els.whiteThreshold.value, 200)
+        },
+        parameter_map: {
+          name: state.paramImageName || null,
+          loaded: !!state.paramImageData,
+          mapping: getParameterMapConfig(),
+          applies_to_ocean: false
+        },
+        generation: {
+          seed_count: toInt(els.seedCount.value, 80),
+          min_region_pixels: toInt(els.minRegionPixels.value, 30),
+          ocean_grid_size: toInt(els.oceanGridSize.value, 32),
+          seed_mode: els.seedMode.value,
+          algorithm: 'masked_voronoi_plus_ocean_grid'
+        },
+        land_types: LAND_TYPES,
+        control_types: controlTypes,
+        status_types: STATUS_TYPES,
+        extra_default_text_fields: state.extraDefaultParams
+          .map(def => ({ key: sanitizeKey(def.key), defaultValue: def.defaultValue || '' }))
+          .filter(def => def.key),
+        regions
+      };
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function exportJson() {
+      if (!state.imageData) {
+        setStatus('Nothing to export yet.');
+        return;
+      }
+
+      downloadBlob(
+        new Blob([JSON.stringify(buildExportObject(), null, 2)], { type: 'application/json' }),
+        `${state.imageName}_regions.json`
+      );
+      setStatus('Exported JSON.');
+    }
+
+    function exportPng(mode = 'regions') {
+      if (!state.width || !state.height) {
+        setStatus('Nothing to export yet.');
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = state.width;
+      canvas.height = state.height;
+      const c = canvas.getContext('2d');
+      const out = new ImageData(state.width, state.height);
+
+      for (let y = 0; y < state.height; y++) {
+        for (let x = 0; x < state.width; x++) {
+          const p = idx(x, y, state.width);
+          const o = p * 4;
+          const rid = state.regionIdMap ? state.regionIdMap[p] : -1;
+
+          if (rid === -1) {
+            out.data[o] = 0;
+            out.data[o + 1] = 0;
+            out.data[o + 2] = 0;
+            out.data[o + 3] = 255;
+            continue;
+          }
+
+          const region = state.regions.get(rid);
+
+          if (mode === 'borders') {
+            const v = state.borderMap && state.borderMap[p] ? 255 : 0;
+            out.data[o] = v;
+            out.data[o + 1] = v;
+            out.data[o + 2] = v;
+            out.data[o + 3] = 255;
+            continue;
+          }
+
+          if (mode === 'height') {
+            const v = region.water ? 0 : [64, 160, 255][clamp(toInt(region.elevation, 0), 0, 2)];
+            out.data[o] = v;
+            out.data[o + 1] = v;
+            out.data[o + 2] = v;
+            out.data[o + 3] = 255;
+            continue;
+          }
+
+          if (state.borderMap && state.borderMap[p]) {
+            out.data[o] = 255;
+            out.data[o + 1] = 255;
+            out.data[o + 2] = 255;
+            out.data[o + 3] = 255;
+            continue;
+          }
+
+          const color = region ? hexToRgb(region.color) : { r: 255, g: 255, b: 255 };
+          out.data[o] = color.r;
+          out.data[o + 1] = color.g;
+          out.data[o + 2] = color.b;
+          out.data[o + 3] = 255;
+        }
+      }
+
+      c.putImageData(out, 0, 0);
+      canvas.toBlob(blob => {
+        let suffix = 'regions';
+        if (mode === 'borders') suffix = 'borders';
+        if (mode === 'height') suffix = 'height';
+        downloadBlob(blob, `${state.imageName}_${suffix}.png`);
+        setStatus(`Exported ${suffix} PNG.`);
+      });
+    }
+
+    function updateStats() {
+      if (!state.width || !state.height || !state.binaryMask) {
+        els.stats.textContent = 'No image loaded.';
+        return;
+      }
+
+      const whiteCount = state.whitePixels.length;
+      const total = state.width * state.height;
+      const blackCount = total - whiteCount;
+      const coverage = total ? ((whiteCount / total) * 100).toFixed(2) : '0.00';
+      const regionCount = state.regions.size;
+      const landRegions = Array.from(state.regions.values()).filter(r => !r.isOcean).length;
+      const oceanRegions = Array.from(state.regions.values()).filter(r => r.isOcean).length;
+      const selected = state.selectedRegionId ? `Selected: ${state.selectedRegionId}` : 'Selected: none';
+      const paramMap = state.paramImageData ? `Parameter map: ${state.paramImageName}` : 'Parameter map: none';
+
+      els.stats.innerHTML = `
+        <div>Image: ${state.width} × ${state.height}</div>
+        <div>Land pixels: ${whiteCount.toLocaleString()} (${coverage}%)</div>
+        <div>Ocean pixels: ${blackCount.toLocaleString()}</div>
+        <div>Regions: ${regionCount} (${landRegions} land, ${oceanRegions} ocean)</div>
+        <div>${selected}</div>
+        <div>${paramMap}</div>
+        <div>Control factions: ${controlTypes.length}</div>
+        <div>Extra defaults: ${state.extraDefaultParams.length}</div>
+      `;
+    }
+
+    els.imageInput.addEventListener('change', async evt => {
+      const file = evt.target.files?.[0];
+      if (file) {
+        try {
+          await handlePrimaryImageUpload(file);
+        } catch (err) {
+          console.error(err);
+          setStatus('Failed to load primary image.');
+        }
+      }
+    });
+
+    els.paramImageInput.addEventListener('change', async evt => {
+      const file = evt.target.files?.[0];
+      if (file) {
+        try {
+          await handleParameterImageUpload(file);
+          updateStats();
+        } catch (err) {
+          console.error(err);
+          setStatus('Failed to load parameter map.');
+        }
+      }
+    });
+
+    els.generateBtn.addEventListener('click', () => {
+      try {
+        generateRegions();
+      } catch (err) {
+        console.error(err);
+        setStatus('Region generation failed.');
+      }
+    });
+
+    els.clearSelectionBtn.addEventListener('click', () => {
+      state.selectedRegionId = null;
+      state.hoverRegionId = null;
+      state.mergeMode = false;
+      syncSelectedRegionUI();
+      if (state.regions.size) drawRegions();
+      else if (state.imageData) drawMaskPreview();
+    });
+
+    els.viewport.addEventListener('wheel', evt => {
+      if (!state.width || !state.height) return;
+      evt.preventDefault();
+      const factor = evt.deltaY < 0 ? 1.12 : (1 / 1.12);
+      zoomAtClientPoint(evt.clientX, evt.clientY, factor);
+    }, { passive: false });
+
+    els.mapCanvas.addEventListener('mousemove', evt => {
+      if (!state.regions.size) return;
+      const regionId = getRegionAtCanvasEvent(evt);
+      const nextHover = regionId === -1 ? null : regionId;
+      if (nextHover !== state.hoverRegionId) {
+        state.hoverRegionId = nextHover;
+        drawRegions();
+      }
+    });
+
+    els.mapCanvas.addEventListener('mouseleave', () => {
+      if (state.hoverRegionId !== null) {
+        state.hoverRegionId = null;
+        if (state.regions.size) drawRegions();
+      }
+    });
+
+    els.mapCanvas.addEventListener('click', evt => {
+      if (!state.regions.size) return;
+      const regionId = getRegionAtCanvasEvent(evt);
+
+      if (state.mergeMode && state.selectedRegionId && regionId !== -1 && regionId !== state.selectedRegionId) {
+        mergeRegionIntoSelected(regionId);
+        return;
+      }
+
+      state.selectedRegionId = regionId === -1 ? null : regionId;
+      state.mergeMode = false;
+      syncSelectedRegionUI();
+      drawRegions();
+    });
+
+    els.saveRegionBtn.addEventListener('click', saveSelectedRegion);
+    els.resetRegionBtn.addEventListener('click', resetSelectedRegion);
+
+    els.mergeModeBtn.addEventListener('click', () => {
+      if (!state.selectedRegionId) {
+        setStatus('Select a target region first.');
+        return;
+      }
+      state.mergeMode = !state.mergeMode;
+      syncSelectedRegionUI();
+      if (state.regions.size) drawRegions();
+      setStatus(
+        state.mergeMode
+          ? 'Merge mode enabled. Click another region to merge it into the selected one.'
+          : 'Merge mode disabled.'
+      );
+    });
+
+    els.cancelMergeBtn.addEventListener('click', () => {
+      state.mergeMode = false;
+      syncSelectedRegionUI();
+      if (state.regions.size) drawRegions();
+      setStatus('Merge mode cancelled.');
+    });
+
+    els.addDefaultParamBtn.addEventListener('click', () => {
+      state.extraDefaultParams.push({ key: '', defaultValue: '' });
+      renderDefaultParamsEditor();
+      renderExtraFieldsEditor(state.selectedRegionId ? state.regions.get(state.selectedRegionId) : null);
+    });
+
+    els.applyDefaultParamsBtn.addEventListener('click', applyDefaultParamsToExisting);
+
+    els.clearDefaultParamsBtn.addEventListener('click', () => {
+      state.extraDefaultParams = [];
+      for (const region of state.regions.values()) region.extraFields = {};
+      renderDefaultParamsEditor();
+      renderExtraFieldsEditor(state.selectedRegionId ? state.regions.get(state.selectedRegionId) : null);
+      setStatus('Cleared added defaults.');
+    });
+
+    els.addControlBtn.addEventListener('click', () => addControlFaction(els.newControlName.value));
+    els.addControlFromTextBtn.addEventListener('click', () => addControlFaction(els.newControlName.value));
+
+    els.applyParamMapBtn.addEventListener('click', () => applyParameterMapToRegions(true));
+    els.clearParamMapBtn.addEventListener('click', clearParameterMap);
+
+    els.exportJsonBtn.addEventListener('click', exportJson);
+    els.exportPngBtn.addEventListener('click', () => exportPng('regions'));
+    els.exportBorderBtn.addEventListener('click', () => exportPng('borders'));
+    els.exportHeightBtn.addEventListener('click', () => exportPng('height'));
+
+    els.whiteThreshold.addEventListener('change', () => {
+      if (!state.imageData) return;
+      buildBinaryMask();
+      clearRegions();
+      drawMaskPreview();
+      requestAnimationFrame(() => fitCanvasToViewport());
+      updateStats();
+      setStatus('Threshold updated. Regenerate regions when ready.');
+    });
+
+    window.addEventListener('resize', () => {
+      if (!state.width || !state.height) return;
+      clampOffsets();
+      setCanvasTransform();
+    });
+
+    initStaticUI();
+    syncSelectedRegionUI();
+    requestAnimationFrame(() => fitCanvasToViewport());
+    setStatus('Load a primary PNG to begin.');
+  </script>
+</body>
+</html>
