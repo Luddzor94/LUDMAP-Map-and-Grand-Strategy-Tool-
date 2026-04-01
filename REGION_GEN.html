@@ -1,0 +1,3436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Region Map Editor</title>
+  <style>
+    :root {
+      --bg: #111827;
+      --panel: #1f2937;
+      --panel-2: #111827;
+      --text: #f9fafb;
+      --muted: #9ca3af;
+      --accent: #60a5fa;
+      --border: #374151;
+      --danger: #f87171;
+      --ok: #34d399;
+      --warn: #fbbf24;
+    }
+
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    .app { display: grid; grid-template-columns: 440px 1fr; min-height: 100vh; }
+    .sidebar { border-right: 1px solid var(--border); background: var(--panel); padding: 16px; overflow: auto; }
+    .main { display: flex; flex-direction: column; min-width: 0; min-height: 100vh; }
+    h1, h2, h3 { margin: 0 0 12px; line-height: 1.2; }
+    h1 { font-size: 1.4rem; }
+    h2 { font-size: 1.05rem; }
+    h3 { font-size: 0.92rem; }
+    .muted { color: var(--muted); }
+    .small { font-size: 0.9rem; }
+    .section { border: 1px solid var(--border); background: rgba(17, 24, 39, 0.55); border-radius: 14px; padding: 14px; margin-bottom: 14px; }
+    .hidden { display: none !important; }
+
+    label { display: block; font-size: 0.9rem; margin-bottom: 6px; color: #e5e7eb; }
+    input, select, textarea, button {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--panel-2);
+      color: var(--text);
+      padding: 10px 12px;
+      font: inherit;
+    }
+    textarea { min-height: 72px; resize: vertical; }
+    button { cursor: pointer; transition: 120ms ease; }
+    button:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-1px); }
+    button:disabled { opacity: 0.55; cursor: not-allowed; }
+
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    .row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+    .stack > * + * { margin-top: 10px; }
+
+    .toolbar {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      background: rgba(31, 41, 55, 0.8);
+      align-items: center;
+    }
+    .toolbar > * { width: auto; }
+    .toolbar .toggle-btn { min-width: 160px; }
+    .toggle-on { border-color: var(--ok) !important; color: #bbf7d0; }
+    .toggle-warn { border-color: var(--warn) !important; color: #fde68a; }
+
+    .workspace {
+      padding: 12px 16px 8px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    .viewport-shell {
+      width: min(1200px, calc(100vw - 520px));
+      height: 70vh;
+      min-height: 440px;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      background: #000;
+      box-shadow: 0 12px 30px rgba(0,0,0,0.25);
+      position: relative;
+    }
+
+    .viewport {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      cursor: crosshair;
+      background: #000;
+    }
+
+    canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      display: block;
+      image-rendering: pixelated;
+      transform-origin: top left;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    #mapCanvas { z-index: 1; }
+    #factionViewCanvas { z-index: 2; display: none; }
+    #waterFocusLandCanvas { z-index: 3; display: none; pointer-events: none; }
+    #overlayCanvas { z-index: 4; pointer-events: auto; }
+
+    .bottom-panel { border-top: 1px solid var(--border); background: rgba(17, 24, 39, 0.75); padding: 10px 16px 14px; }
+    .bottom-grid { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 14px; }
+
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      margin-right: 6px;
+      margin-bottom: 6px;
+    }
+
+    .danger { border-color: #7f1d1d; color: #fecaca; }
+    .success { border-color: #065f46; color: #bbf7d0; }
+
+    .selected-box {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      border: 1px solid rgba(255,255,255,0.35);
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    .hint { font-size: 0.84rem; color: var(--muted); line-height: 1.45; }
+    .status { min-height: 1.4em; color: #cbd5e1; font-size: 0.9rem; }
+
+    .mapping-grid { display: grid; grid-template-columns: 1.1fr 1fr 0.9fr; gap: 8px; align-items: end; }
+    .mapping-grid + .mapping-grid { margin-top: 8px; }
+    .mapping-head { font-size: 0.8rem; color: var(--muted); margin-bottom: 4px; }
+
+    .default-param-card, .control-card, .flag-card {
+      border: 1px solid var(--border);
+      background: rgba(17,24,39,0.5);
+      border-radius: 12px;
+      padding: 10px;
+    }
+
+    .default-param-head, .control-head, .flag-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .default-param-head button, .control-head button, .flag-head button {
+      width: auto;
+      padding: 8px 10px;
+    }
+
+    @media (max-width: 1200px) {
+      .bottom-grid { grid-template-columns: 1fr; }
+      .viewport-shell { width: calc(100vw - 48px); }
+    }
+
+    @media (max-width: 1100px) {
+      .app { grid-template-columns: 1fr; }
+      .sidebar { border-right: 0; border-bottom: 1px solid var(--border); }
+      .viewport-shell { width: calc(100vw - 48px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <h1>Region Map Editor</h1>
+      <p class="muted small">Organic land regions, square-grid water regions, parameter-map bulk fill, save/load, faction preview/export, and separate layered water editing.</p>
+
+      <div id="regionPanel" class="section stack">
+        <h2>Selected region</h2>
+        <div id="selectionSummary" class="muted">No region selected.</div>
+        <div><label for="regionName">Name</label><input id="regionName" type="text" placeholder="Region name" /></div>
+
+        <div class="row">
+          <div><label for="regionLand">Land</label><select id="regionLand"></select></div>
+          <div><label for="regionControl">Control</label><select id="regionControl"></select></div>
+        </div>
+
+        <div class="row">
+          <div><label for="regionWater">Water</label><select id="regionWater"><option value="false">false</option><option value="true">true</option></select></div>
+          <div><label for="regionStatus">Status</label><select id="regionStatus"></select></div>
+        </div>
+
+        <div class="row">
+          <div><label for="regionFlag">Flag</label><select id="regionFlag"></select></div>
+          <div><label for="regionElevation">Elevation</label><input id="regionElevation" type="number" step="1" value="0" /></div>
+        </div>
+
+        <div class="row-3">
+          <div><label for="regionPopulation">Population</label><input id="regionPopulation" type="number" step="1" value="0" /></div>
+          <div><label for="regionTaxPerc">TaxPerc</label><input id="regionTaxPerc" type="number" step="1" value="20" /></div>
+          <div><label for="regionContent">Content</label><input id="regionContent" type="number" step="1" value="30" /></div>
+        </div>
+
+        <div class="row">
+          <div><label for="regionColor">Display color</label><input id="regionColor" type="color" value="#5da9ff" /></div>
+          <div><label for="regionParamD">ParamD</label><input id="regionParamD" type="number" step="1" value="0" /></div>
+        </div>
+
+        <div class="row-3">
+          <div><label for="regionParamA">ParamA</label><input id="regionParamA" type="number" step="1" value="0" /></div>
+          <div><label for="regionParamB">ParamB</label><input id="regionParamB" type="number" step="1" value="0" /></div>
+          <div><label for="regionParamC">ParamC</label><input id="regionParamC" type="number" step="1" value="0" /></div>
+        </div>
+
+        <div class="row">
+          <div><label for="regionFreshWater">Fresh Water</label><input id="regionFreshWater" type="number" step="1" value="0" /></div>
+          <div><label for="regionClimate">Climate</label><input id="regionClimate" type="text" placeholder="Temperate" /></div>
+        </div>
+
+        <div id="extraFieldsContainer" class="stack"></div>
+        <div><label for="regionNotes">Notes</label><textarea id="regionNotes" placeholder="Optional notes"></textarea></div>
+
+        <div class="row">
+          <button id="saveRegionBtn" class="success" type="button">Save region</button>
+          <button id="resetRegionBtn" class="danger" type="button">Reset region</button>
+        </div>
+
+        <div class="row">
+          <button id="mergeModeBtn" type="button">Merge mode: Off</button>
+          <button id="splitRegionBtn" type="button">Split selected region</button>
+        </div>
+
+        <div class="row">
+          <button id="cancelMergeBtn" class="danger" type="button">Cancel merge</button>
+          <button id="subdivideWaterBtn" type="button">Subdivide water</button>
+        </div>
+      </div>
+
+      <div class="section stack">
+        <div class="row" style="align-items:end;">
+          <div><h2 style="margin:0;">Default text parameters</h2></div>
+          <div><button id="addDefaultParamBtn" type="button">Add new default parameter</button></div>
+        </div>
+        <div id="defaultParamsContainer" class="stack"></div>
+        <div class="row">
+          <button id="applyDefaultParamsBtn" type="button">Apply defaults to existing</button>
+          <button id="clearDefaultParamsBtn" class="danger" type="button">Clear added defaults</button>
+        </div>
+      </div>
+
+      <div class="section stack">
+        <div class="row" style="align-items:end;">
+          <div><h2 style="margin:0;">Control factions</h2></div>
+          <div><button id="addControlBtn" type="button">Add control faction</button></div>
+        </div>
+        <div class="row">
+          <div><label for="newControlName">New faction name</label><input id="newControlName" type="text" placeholder="Example: Empire" /></div>
+          <div><label>&nbsp;</label><button id="addControlFromTextBtn" type="button">Add from text</button></div>
+        </div>
+        <div id="controlsContainer" class="stack"></div>
+      </div>
+
+      <div class="section stack">
+        <div class="row" style="align-items:end;">
+          <div><h2 style="margin:0;">Flags</h2></div>
+          <div><button id="addFlagBtn" type="button">Add flag</button></div>
+        </div>
+        <div class="row">
+          <div><label for="newFlagName">New flag value</label><input id="newFlagName" type="text" placeholder="Example: Crown" /></div>
+          <div><label>&nbsp;</label><button id="addFlagFromTextBtn" type="button">Add from text</button></div>
+        </div>
+        <div id="flagsContainer" class="stack"></div>
+      </div>
+
+      <div class="section stack">
+        <h2>Parameter map</h2>
+        <div class="mapping-head">Field / Channel / Max value</div>
+        <div class="mapping-grid"><div><label for="mapPopulationSource">Population</label><select id="mapPopulationSource"></select></div><div><label for="mapPopulationMode">Mode</label><select id="mapPopulationMode"></select></div><div><label for="mapPopulationMax">Max</label><input id="mapPopulationMax" type="number" step="1" value="1000" /></div></div>
+        <div class="mapping-grid"><div><label for="mapContentSource">Content</label><select id="mapContentSource"></select></div><div><label for="mapContentMode">Mode</label><select id="mapContentMode"></select></div><div><label for="mapContentMax">Max</label><input id="mapContentMax" type="number" step="1" value="100" /></div></div>
+        <div class="mapping-grid"><div><label for="mapParamASource">ParamA</label><select id="mapParamASource"></select></div><div><label for="mapParamAMode">Mode</label><select id="mapParamAMode"></select></div><div><label for="mapParamAMax">Max</label><input id="mapParamAMax" type="number" step="1" value="100" /></div></div>
+        <div class="mapping-grid"><div><label for="mapParamBSource">ParamB</label><select id="mapParamBSource"></select></div><div><label for="mapParamBMode">Mode</label><select id="mapParamBMode"></select></div><div><label for="mapParamBMax">Max</label><input id="mapParamBMax" type="number" step="1" value="100" /></div></div>
+        <div class="mapping-grid"><div><label for="mapParamCSource">ParamC</label><select id="mapParamCSource"></select></div><div><label for="mapParamCMode">Mode</label><select id="mapParamCMode"></select></div><div><label for="mapParamCMax">Max</label><input id="mapParamCMax" type="number" step="1" value="100" /></div></div>
+        <div class="mapping-grid"><div><label for="mapParamDSource">ParamD</label><select id="mapParamDSource"></select></div><div><label for="mapParamDMode">Mode</label><select id="mapParamDMode"></select></div><div><label for="mapParamDMax">Max</label><input id="mapParamDMax" type="number" step="1" value="100" /></div></div>
+        <div class="row"><div><label for="mapWaterSource">Water source</label><select id="mapWaterSource"></select></div><div><label for="mapWaterThreshold">Water threshold</label><input id="mapWaterThreshold" type="number" min="0" max="255" step="1" value="160" /></div></div>
+        <div class="row"><button id="applyParamMapBtn" type="button">Apply parameter map</button><button id="clearParamMapBtn" class="danger" type="button">Clear parameter map</button></div>
+      </div>
+
+      <div class="section stack">
+        <h2>Load panel</h2>
+        <div><label for="loadRebuildLandPngInput">Load PNG (Rebuild Land)</label><input id="loadRebuildLandPngInput" type="file" accept="image/png,image/*" /></div>
+        <div><label for="loadRebuildWaterPngInput">Load PNG (Rebuild Water)</label><input id="loadRebuildWaterPngInput" type="file" accept="image/png,image/*" /></div>
+        <div><label for="loadExportInput">Load JSON</label><input id="loadExportInput" type="file" accept=".json,application/json" /></div>
+        <div><button id="rebuildFromSaveBtn" type="button">Rebuild from save</button></div>
+        <div class="hint">Load the same Main PNG first. Then load the matching Rebuild Land PNG, Rebuild Water PNG, and Export JSON, and click Rebuild from save.</div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="toolbar">
+        <button id="waterFocusToggleBtn" class="toggle-btn" type="button">Water Focus: Off</button>
+        <button id="factionViewToggleBtn" class="toggle-btn" type="button">Faction View: Off</button>
+        <span class="pill">Wheel zoom follows cursor</span>
+        <span class="pill">Main PNG: white=land, red=border, black=ignored</span>
+        <span class="pill">Water PNG: opaque pixels = water layer</span>
+        <span id="status" class="status"></span>
+      </div>
+
+      <div class="workspace">
+        <div class="viewport-shell">
+          <div id="viewport" class="viewport">
+            <canvas id="mapCanvas" width="800" height="600"></canvas>
+            <canvas id="factionViewCanvas" width="800" height="600"></canvas>
+            <canvas id="waterFocusLandCanvas" width="800" height="600"></canvas>
+            <canvas id="overlayCanvas" width="800" height="600"></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="bottom-panel">
+        <div class="bottom-grid">
+          <div class="section" style="margin:0;">
+            <h2>Input</h2>
+            <div><label for="imageInput">Primary PNG (white land, red borders, black ignored)</label><input id="imageInput" type="file" accept="image/png,image/*" /></div>
+            <div><label for="waterImageInput">Water PNG (opaque area becomes water layer)</label><input id="waterImageInput" type="file" accept="image/png,image/*" /></div>
+            <div><label for="paramImageInput">Secondary PNG (parameter map)</label><input id="paramImageInput" type="file" accept="image/png,image/*" /></div>
+            <div><label for="loadSaveInput">Load JSON Save</label><input id="loadSaveInput" type="file" accept=".json,application/json" /></div>
+            <div class="hint">Pure black opaque Water PNGs are valid. Water exists on that layer without deleting the shoreline overlap.</div>
+          </div>
+
+          <div class="section" style="margin:0;">
+            <h2>Generation</h2>
+            <div class="row"><div><label for="seedCount">Land seed count</label><input id="seedCount" type="number" min="1" max="2000" value="80" /></div><div><label for="whiteThreshold">White threshold</label><input id="whiteThreshold" type="number" min="0" max="255" value="200" /></div></div>
+            <div class="row"><div><label for="minRegionPixels">Min land region pixels</label><input id="minRegionPixels" type="number" min="1" max="50000" value="30" /></div><div><label for="oceanGridSize">Water grid size (px)</label><input id="oceanGridSize" type="number" min="1" max="4096" value="500" /></div></div>
+            <div class="row"><div><label for="smallLandmassThreshold">Small landmass = single region</label><input id="smallLandmassThreshold" type="number" min="0" max="50000" value="80" /></div><div><label for="seedMode">Land generation mode</label><select id="seedMode"><option value="normal">Normal</option><option value="box">Box</option><option value="complex">Complex</option></select></div></div>
+            <div class="row"><div><label for="complexRandomness">Complex randomness</label><input id="complexRandomness" type="range" min="0" max="200" step="1" value="100" /></div><div><label for="complexPerturbation">Complex perturbation</label><input id="complexPerturbation" type="range" min="0" max="200" step="1" value="100" /></div></div>
+            <div class="row"><div><label for="complexNoiseScale">Complex noise scale</label><input id="complexNoiseScale" type="range" min="25" max="400" step="1" value="100" /></div><div></div></div>
+            <div class="row"><div><label>&nbsp;</label><button id="generateBtn" type="button">Generate regions</button></div><div><label>&nbsp;</label><button id="clearSelectionBtn" type="button">Clear selection</button></div></div>
+            <div class="hint">Box rendering remains untouched. Complex mode can be redirected later without pruning the sliders or the box path.</div>
+          </div>
+
+          <div class="section" style="margin:0;">
+            <h2>Save / Export & stats</h2>
+            <div class="row"><button id="saveJsonBtn" type="button">Save JSON</button><button id="exportJsonBtn" type="button">Export JSON</button></div>
+            <div class="row"><button id="exportPngBtn" type="button">Export PNG</button><button id="exportFactionBtn" type="button">Faction PNG</button></div>
+            <div class="row"><button id="exportRebuildLandBtn" type="button">Rebuild Land PNG</button><button id="exportRebuildWaterBtn" type="button">Rebuild Water PNG</button></div>
+            <div class="row"><button id="exportBorderBtn" type="button">Border PNG</button><div></div></div>
+            <div style="margin-top:12px;"><h3>Stats</h3><div id="stats" class="small muted">No image loaded.</div></div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const LAND_TYPES = ['Grass', 'Plains', 'Forest', 'Rocks', 'Ocean', 'Urban', 'Snow', 'Desert'];
+    const STATUS_TYPES = ['Rural', 'Town', 'City', 'Capital'];
+    const CHANNEL_OPTIONS = [
+      { value: 'none', label: 'None' },
+      { value: 'red', label: 'Red' },
+      { value: 'green', label: 'Green' },
+      { value: 'blue', label: 'Blue' },
+      { value: 'alpha', label: 'Alpha' },
+      { value: 'brightness', label: 'Brightness' }
+    ];
+    const MODE_OPTIONS = [
+      { value: 'linear', label: 'Linear' },
+      { value: 'quadratic', label: 'Quadratic' },
+      { value: 'inverseQuadratic', label: 'Inverse quadratic' }
+    ];
+
+    // Exact sentinel only.
+    const REBUILD_LAND_TRANSPARENT_HEX = '#ff00ff';
+    const REBUILD_LAND_TRANSPARENT_RGB = { r: 255, g: 0, b: 255 };
+
+    let controlTypes = ['Neutral', 'Nature', 'Aqua', 'Fire', 'Light', 'Dark', 'Persian', 'Viking'];
+    let flagValues = ['None'];
+
+    const CONTROL_COLORS = {
+      Neutral: '#8b8f99',
+      Nature: '#4caf50',
+      Aqua: '#25a9e0',
+      Fire: '#d95c41',
+      Light: '#d8c862',
+      Dark: '#6f62a8',
+      Persian: '#b85dc0',
+      Viking: '#8a6d49'
+    };
+
+    const state = {
+      imageBitmap: null,
+      width: 0,
+      height: 0,
+      imageData: null,
+
+      waterImageBitmap: null,
+      waterImageData: null,
+      waterImageName: '',
+      usingWaterPng: false,
+
+      paramImageBitmap: null,
+      paramImageData: null,
+      paramImageName: '',
+
+      rebuildLandImageBitmap: null,
+      rebuildLandImageData: null,
+      rebuildLandImageName: '',
+
+      rebuildWaterImageBitmap: null,
+      rebuildWaterImageData: null,
+      rebuildWaterImageName: '',
+
+      pendingExportObject: null,
+      pendingExportName: '',
+
+      landMask: null,
+      waterMask: null,
+      borderMask: null,
+      permanentBorderMask: null,
+      whitePixels: [],
+
+      landRegionIdMap: null,
+      waterRegionIdMap: null,
+      regionPixelMap: new Map(),
+
+      regions: new Map(),
+      selectedRegionId: null,
+      hoverRegionId: null,
+      mergeMode: false,
+      nextRegionId: 1,
+      imageName: 'map',
+      extraDefaultParams: [],
+
+      zoom: 1,
+      minZoom: 0.1,
+      maxZoom: 12,
+      offsetX: 0,
+      offsetY: 0,
+
+      waterFocusEnabled: false,
+      factionViewEnabled: false,
+      loadInProgress: false,
+
+      renderCache: {
+        mainCanvas: document.createElement('canvas'),
+        mainCtx: null,
+        mainData: null,
+
+        factionCanvas: document.createElement('canvas'),
+        factionCtx: null,
+        factionData: null,
+
+        waterFocusLandCanvas: document.createElement('canvas'),
+        waterFocusLandCtx: null,
+        waterFocusLandData: null,
+
+        dirtyMain: true,
+        dirtyFaction: true,
+        dirtyWaterFocusLand: true,
+        rafPending: false
+      }
+    };
+
+    state.renderCache.mainCtx = state.renderCache.mainCanvas.getContext('2d', { willReadFrequently: true });
+    state.renderCache.factionCtx = state.renderCache.factionCanvas.getContext('2d', { willReadFrequently: true });
+    state.renderCache.waterFocusLandCtx = state.renderCache.waterFocusLandCanvas.getContext('2d', { willReadFrequently: true });
+
+    const els = {
+      imageInput: document.getElementById('imageInput'),
+      waterImageInput: document.getElementById('waterImageInput'),
+      paramImageInput: document.getElementById('paramImageInput'),
+      loadSaveInput: document.getElementById('loadSaveInput'),
+      loadExportInput: document.getElementById('loadExportInput'),
+      loadRebuildLandPngInput: document.getElementById('loadRebuildLandPngInput'),
+      loadRebuildWaterPngInput: document.getElementById('loadRebuildWaterPngInput'),
+      rebuildFromSaveBtn: document.getElementById('rebuildFromSaveBtn'),
+
+      selectionSummary: document.getElementById('selectionSummary'),
+      regionName: document.getElementById('regionName'),
+      regionLand: document.getElementById('regionLand'),
+      regionControl: document.getElementById('regionControl'),
+      regionWater: document.getElementById('regionWater'),
+      regionStatus: document.getElementById('regionStatus'),
+      regionFlag: document.getElementById('regionFlag'),
+      regionElevation: document.getElementById('regionElevation'),
+      regionPopulation: document.getElementById('regionPopulation'),
+      regionTaxPerc: document.getElementById('regionTaxPerc'),
+      regionContent: document.getElementById('regionContent'),
+      regionParamA: document.getElementById('regionParamA'),
+      regionParamB: document.getElementById('regionParamB'),
+      regionParamC: document.getElementById('regionParamC'),
+      regionParamD: document.getElementById('regionParamD'),
+      regionFreshWater: document.getElementById('regionFreshWater'),
+      regionClimate: document.getElementById('regionClimate'),
+      regionNotes: document.getElementById('regionNotes'),
+      regionColor: document.getElementById('regionColor'),
+      extraFieldsContainer: document.getElementById('extraFieldsContainer'),
+      saveRegionBtn: document.getElementById('saveRegionBtn'),
+      resetRegionBtn: document.getElementById('resetRegionBtn'),
+      mergeModeBtn: document.getElementById('mergeModeBtn'),
+      splitRegionBtn: document.getElementById('splitRegionBtn'),
+      cancelMergeBtn: document.getElementById('cancelMergeBtn'),
+      subdivideWaterBtn: document.getElementById('subdivideWaterBtn'),
+
+      defaultParamsContainer: document.getElementById('defaultParamsContainer'),
+      addDefaultParamBtn: document.getElementById('addDefaultParamBtn'),
+      applyDefaultParamsBtn: document.getElementById('applyDefaultParamsBtn'),
+      clearDefaultParamsBtn: document.getElementById('clearDefaultParamsBtn'),
+
+      controlsContainer: document.getElementById('controlsContainer'),
+      newControlName: document.getElementById('newControlName'),
+      addControlBtn: document.getElementById('addControlBtn'),
+      addControlFromTextBtn: document.getElementById('addControlFromTextBtn'),
+
+      flagsContainer: document.getElementById('flagsContainer'),
+      newFlagName: document.getElementById('newFlagName'),
+      addFlagBtn: document.getElementById('addFlagBtn'),
+      addFlagFromTextBtn: document.getElementById('addFlagFromTextBtn'),
+
+      applyParamMapBtn: document.getElementById('applyParamMapBtn'),
+      clearParamMapBtn: document.getElementById('clearParamMapBtn'),
+      mapPopulationSource: document.getElementById('mapPopulationSource'),
+      mapPopulationMode: document.getElementById('mapPopulationMode'),
+      mapPopulationMax: document.getElementById('mapPopulationMax'),
+      mapContentSource: document.getElementById('mapContentSource'),
+      mapContentMode: document.getElementById('mapContentMode'),
+      mapContentMax: document.getElementById('mapContentMax'),
+      mapParamASource: document.getElementById('mapParamASource'),
+      mapParamAMode: document.getElementById('mapParamAMode'),
+      mapParamAMax: document.getElementById('mapParamAMax'),
+      mapParamBSource: document.getElementById('mapParamBSource'),
+      mapParamBMode: document.getElementById('mapParamBMode'),
+      mapParamBMax: document.getElementById('mapParamBMax'),
+      mapParamCSource: document.getElementById('mapParamCSource'),
+      mapParamCMode: document.getElementById('mapParamCMode'),
+      mapParamCMax: document.getElementById('mapParamCMax'),
+      mapParamDSource: document.getElementById('mapParamDSource'),
+      mapParamDMode: document.getElementById('mapParamDMode'),
+      mapParamDMax: document.getElementById('mapParamDMax'),
+      mapWaterSource: document.getElementById('mapWaterSource'),
+      mapWaterThreshold: document.getElementById('mapWaterThreshold'),
+
+      seedCount: document.getElementById('seedCount'),
+      whiteThreshold: document.getElementById('whiteThreshold'),
+      minRegionPixels: document.getElementById('minRegionPixels'),
+      smallLandmassThreshold: document.getElementById('smallLandmassThreshold'),
+      oceanGridSize: document.getElementById('oceanGridSize'),
+      seedMode: document.getElementById('seedMode'),
+      complexRandomness: document.getElementById('complexRandomness'),
+      complexPerturbation: document.getElementById('complexPerturbation'),
+      complexNoiseScale: document.getElementById('complexNoiseScale'),
+      generateBtn: document.getElementById('generateBtn'),
+      clearSelectionBtn: document.getElementById('clearSelectionBtn'),
+
+      saveJsonBtn: document.getElementById('saveJsonBtn'),
+      exportJsonBtn: document.getElementById('exportJsonBtn'),
+      exportPngBtn: document.getElementById('exportPngBtn'),
+      exportFactionBtn: document.getElementById('exportFactionBtn'),
+      exportRebuildLandBtn: document.getElementById('exportRebuildLandBtn'),
+      exportRebuildWaterBtn: document.getElementById('exportRebuildWaterBtn'),
+      exportBorderBtn: document.getElementById('exportBorderBtn'),
+
+      waterFocusToggleBtn: document.getElementById('waterFocusToggleBtn'),
+      factionViewToggleBtn: document.getElementById('factionViewToggleBtn'),
+
+      stats: document.getElementById('stats'),
+      status: document.getElementById('status'),
+      mapCanvas: document.getElementById('mapCanvas'),
+      factionViewCanvas: document.getElementById('factionViewCanvas'),
+      waterFocusLandCanvas: document.getElementById('waterFocusLandCanvas'),
+      overlayCanvas: document.getElementById('overlayCanvas'),
+      viewport: document.getElementById('viewport')
+    };
+
+    const ctx = els.mapCanvas.getContext('2d', { willReadFrequently: true });
+    const factionViewCtx = els.factionViewCanvas.getContext('2d', { willReadFrequently: true });
+    const waterFocusLandCtx = els.waterFocusLandCanvas.getContext('2d', { willReadFrequently: true });
+    const overlayCtx = els.overlayCanvas.getContext('2d', { willReadFrequently: true });
+
+    function sleepFrame() {
+      return new Promise(resolve => requestAnimationFrame(resolve));
+    }
+
+    function setStatus(message) {
+      els.status.textContent = message;
+    }
+
+    function clamp(v, min, max) {
+      return Math.max(min, Math.min(max, v));
+    }
+
+    function toInt(value, fallback = 0) {
+      const n = parseInt(value, 10);
+      return Number.isFinite(n) ? n : fallback;
+    }
+
+    function randomInt(min, max) {
+      return Math.floor(Math.random() * (max - min + 1)) + min;
+    }
+
+    function idx(x, y, width) {
+      return y * width + x;
+    }
+
+    function sanitizeKey(value) {
+      return String(value || '').trim().replace(/[^A-Za-z0-9_]/g, '_').replace(/^_+/, '');
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    function populateSelect(select, options) {
+      const current = select.value;
+      select.innerHTML = '';
+      for (const option of options) {
+        const el = document.createElement('option');
+        const value = typeof option === 'string' ? option : option.value;
+        const label = typeof option === 'string' ? option : option.label;
+        el.value = value;
+        el.textContent = label;
+        select.appendChild(el);
+      }
+      if (options.some(option => (typeof option === 'string' ? option : option.value) === current)) {
+        select.value = current;
+      }
+    }
+
+    function rgbToHex(r, g, b) {
+      return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+    }
+
+    function hexToRgb(hex) {
+      const clean = String(hex || '#000000').replace('#', '');
+      const full = clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean;
+      const num = parseInt(full, 16);
+      return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+    }
+
+    function hslToHex(h, s, l) {
+      s /= 100;
+      l /= 100;
+      const k = n => (n + h / 30) % 12;
+      const a = s * Math.min(l, 1 - l);
+      const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)))));
+      return rgbToHex(f(0), f(8), f(4));
+    }
+
+    function hashNoise(x, y, seed) {
+      let n = x * 374761393 + y * 668265263 + seed * 1442695041;
+      n = (n ^ (n >> 13)) >>> 0;
+      n = (n * 1274126177) >>> 0;
+      return (n & 0xfffffff) / 0xfffffff;
+    }
+
+    function regionColorFromId(id, isOcean = false) {
+      if (isOcean) {
+        const x = Math.sin(id * 7.123) * 15731.743;
+        const frac = x - Math.floor(x);
+        const hue = 190 + Math.floor(frac * 40);
+        return hslToHex(hue, 58, 44);
+      }
+      const x = Math.sin(id * 12.9898) * 43758.5453;
+      const frac = x - Math.floor(x);
+      let hue = Math.floor(frac * 360);
+
+      if (hue >= 292 && hue <= 328) hue = (hue + 52) % 360;
+      if (hue >= 300 && hue <= 345) hue = (hue + 60) % 360;
+
+      return hslToHex(hue, 68, 58);
+    }
+
+    // Guaranteed unique rebuild identity color.
+    // 0 is reserved; ids start at 1.
+    function rebuildIdentityColorFromId(id) {
+      const safeId = Math.max(1, id | 0);
+      return {
+        r: safeId & 255,
+        g: (safeId >> 8) & 255,
+        b: (safeId >> 16) & 255
+      };
+    }
+
+    function rebuildIdentityHexFromId(id) {
+      const { r, g, b } = rebuildIdentityColorFromId(id);
+      return rgbToHex(r, g, b);
+    }
+
+    function regionIdFromRebuildIdentityColor(r, g, b) {
+      return (r | (g << 8) | (b << 16)) >>> 0;
+    }
+
+    function createEmptyTypedArray(width, height, type = 'int32', fill = -1) {
+      const size = width * height;
+      const arr = type === 'uint8' ? new Uint8Array(size) : new Int32Array(size);
+      if (fill !== 0) arr.fill(fill);
+      return arr;
+    }
+
+    function isBorderPixel(r, g, b, a) {
+      if (a <= 0) return false;
+      const maxGB = Math.max(g, b);
+      const redDominance = r - maxGB;
+      return (
+        r >= 40 &&
+        redDominance >= 10 &&
+        r >= maxGB * 1.15 &&
+        !(r >= 200 && g >= 200 && b >= 200)
+      );
+    }
+
+    function isBorderFringePixel(r, g, b, a, whiteThreshold) {
+      if (a <= 0) return false;
+      const brightness = (r + g + b) / 3;
+      const maxGB = Math.max(g, b);
+      return (
+        r >= 24 &&
+        r >= maxGB + 6 &&
+        brightness < whiteThreshold - 2
+      );
+    }
+
+    function isBlackBarrier(r, g, b, a) {
+      return a > 0 && r <= 8 && g <= 8 && b <= 8;
+    }
+
+    function isRebuildLandTransparentPixel(r, g, b, a) {
+      if (a <= 0) return false;
+      return r === REBUILD_LAND_TRANSPARENT_RGB.r &&
+             g === REBUILD_LAND_TRANSPARENT_RGB.g &&
+             b === REBUILD_LAND_TRANSPARENT_RGB.b;
+    }
+
+    function getGenerationConfig() {
+      return {
+        seedCount: clamp(toInt(els.seedCount.value, 80), 1, 2000),
+        whiteThreshold: clamp(toInt(els.whiteThreshold.value, 200), 0, 255),
+        minRegionPixels: Math.max(1, toInt(els.minRegionPixels.value, 30)),
+        smallLandmassThreshold: Math.max(0, toInt(els.smallLandmassThreshold.value, 80)),
+        oceanGridSize: Math.max(1, toInt(els.oceanGridSize.value, 500)),
+        mode: els.seedMode.value,
+        randomness: clamp(toInt(els.complexRandomness.value, 100), 0, 200) / 100,
+        perturbation: clamp(toInt(els.complexPerturbation.value, 100), 0, 200) / 100,
+        noiseScale: clamp(toInt(els.complexNoiseScale.value, 100), 25, 400) / 100
+      };
+    }
+
+    function getExtraDefaultsObject() {
+      const extra = {};
+      for (const def of state.extraDefaultParams) {
+        const key = sanitizeKey(def.key);
+        if (!key) continue;
+        extra[key] = def.defaultValue || '';
+      }
+      return extra;
+    }
+
+    function makeDefaultRegion(id, x, y, isOcean = false) {
+      return {
+        id,
+        seed: [x, y],
+        area: 0,
+        color: regionColorFromId(id, isOcean),
+        rebuildColor: rebuildIdentityHexFromId(id),
+        notes: '',
+        name: isOcean ? `Water ${id}` : `Region ${id}`,
+        land: isOcean ? 'Ocean' : 'Grass',
+        control: 'Neutral',
+        water: isOcean,
+        status: 'Rural',
+        flag: 'None',
+        elevation: 0,
+        population: 0,
+        taxPerc: 20,
+        content: 30,
+        paramA: 0,
+        paramB: 0,
+        paramC: 0,
+        paramD: 0,
+        freshWater: 0,
+        climate: '',
+        extraFields: getExtraDefaultsObject(),
+        isOcean
+      };
+    }
+
+    function markRenderDirty() {
+      state.renderCache.dirtyMain = true;
+      state.renderCache.dirtyFaction = true;
+      state.renderCache.dirtyWaterFocusLand = true;
+    }
+
+    function ensureRenderCacheSize() {
+      const { width, height } = state;
+      if (!width || !height) return;
+
+      if (state.renderCache.mainCanvas.width !== width || state.renderCache.mainCanvas.height !== height) {
+        state.renderCache.mainCanvas.width = width;
+        state.renderCache.mainCanvas.height = height;
+
+        state.renderCache.factionCanvas.width = width;
+        state.renderCache.factionCanvas.height = height;
+
+        state.renderCache.waterFocusLandCanvas.width = width;
+        state.renderCache.waterFocusLandCanvas.height = height;
+
+        state.renderCache.mainData = null;
+        state.renderCache.factionData = null;
+        state.renderCache.waterFocusLandData = null;
+
+        state.renderCache.dirtyMain = true;
+        state.renderCache.dirtyFaction = true;
+        state.renderCache.dirtyWaterFocusLand = true;
+      }
+    }
+
+    function setCanvasTransform() {
+      if (!Number.isFinite(state.offsetX)) state.offsetX = 0;
+      if (!Number.isFinite(state.offsetY)) state.offsetY = 0;
+      if (!Number.isFinite(state.zoom)) state.zoom = 1;
+
+      const transform = `translate(${state.offsetX}px, ${state.offsetY}px) scale(${state.zoom})`;
+      els.mapCanvas.style.transform = transform;
+      els.factionViewCanvas.style.transform = transform;
+      els.waterFocusLandCanvas.style.transform = transform;
+      els.overlayCanvas.style.transform = transform;
+    }
+
+    function clampOffsets() {
+      const viewportRect = els.viewport.getBoundingClientRect();
+      if (!viewportRect.width || !viewportRect.height || !state.width || !state.height) return;
+
+      const scaledWidth = state.width * state.zoom;
+      const scaledHeight = state.height * state.zoom;
+
+      if (scaledWidth <= viewportRect.width) state.offsetX = (viewportRect.width - scaledWidth) / 2;
+      else state.offsetX = clamp(state.offsetX, viewportRect.width - scaledWidth, 0);
+
+      if (scaledHeight <= viewportRect.height) state.offsetY = (viewportRect.height - scaledHeight) / 2;
+      else state.offsetY = clamp(state.offsetY, viewportRect.height - scaledHeight, 0);
+    }
+
+    function fitCanvasToViewport() {
+      if (!state.width || !state.height) return;
+      const viewportRect = els.viewport.getBoundingClientRect();
+      if (!viewportRect.width || !viewportRect.height) return;
+
+      const scaleX = viewportRect.width / state.width;
+      const scaleY = viewportRect.height / state.height;
+      state.zoom = clamp(Math.min(scaleX, scaleY), state.minZoom, state.maxZoom);
+
+      const scaledWidth = state.width * state.zoom;
+      const scaledHeight = state.height * state.zoom;
+      state.offsetX = (viewportRect.width - scaledWidth) / 2;
+      state.offsetY = (viewportRect.height - scaledHeight) / 2;
+      setCanvasTransform();
+    }
+
+    function zoomAtClientPoint(clientX, clientY, factor) {
+      if (!state.width || !state.height) return;
+      const viewportRect = els.viewport.getBoundingClientRect();
+      if (!viewportRect.width || !viewportRect.height) return;
+
+      const beforeX = (clientX - viewportRect.left - state.offsetX) / state.zoom;
+      const beforeY = (clientY - viewportRect.top - state.offsetY) / state.zoom;
+      const newZoom = clamp(state.zoom * factor, state.minZoom, state.maxZoom);
+      if (newZoom === state.zoom) return;
+
+      state.zoom = newZoom;
+      state.offsetX = clientX - viewportRect.left - beforeX * state.zoom;
+      state.offsetY = clientY - viewportRect.top - beforeY * state.zoom;
+      clampOffsets();
+      setCanvasTransform();
+    }
+
+    async function loadBitmapAndImageData(file) {
+      const bitmap = await createImageBitmap(file);
+      const off = document.createElement('canvas');
+      off.width = bitmap.width;
+      off.height = bitmap.height;
+      const offCtx = off.getContext('2d', { willReadFrequently: true });
+      offCtx.drawImage(bitmap, 0, 0);
+      return {
+        bitmap,
+        imageData: offCtx.getImageData(0, 0, bitmap.width, bitmap.height)
+      };
+    }
+
+    function getCanvasImageCoords(evt) {
+      if (!state.width || !state.height) return null;
+      const rect = els.overlayCanvas.getBoundingClientRect();
+      const imageX = (evt.clientX - rect.left) / state.zoom;
+      const imageY = (evt.clientY - rect.top) / state.zoom;
+      const x = Math.floor(imageX);
+      const y = Math.floor(imageY);
+      if (x < 0 || y < 0 || x >= state.width || y >= state.height) return null;
+      return { x, y };
+    }
+
+    function clearSelections() {
+      state.selectedRegionId = null;
+      state.hoverRegionId = null;
+      state.mergeMode = false;
+    }
+
+    function clearRegions() {
+      state.landRegionIdMap = createEmptyTypedArray(state.width || 1, state.height || 1, 'int32', -1);
+      state.waterRegionIdMap = createEmptyTypedArray(state.width || 1, state.height || 1, 'int32', -1);
+      state.regions = new Map();
+      state.regionPixelMap = new Map();
+      state.selectedRegionId = null;
+      state.hoverRegionId = null;
+      state.mergeMode = false;
+      state.nextRegionId = 1;
+      markRenderDirty();
+    }
+
+    function getRegionMapForRegion(region) {
+      return region.isOcean ? state.waterRegionIdMap : state.landRegionIdMap;
+    }
+
+    function getRegionAtPixel(x, y) {
+      if (!state.width || !state.height) return -1;
+      const p = idx(x, y, state.width);
+
+      const waterId = state.waterRegionIdMap ? state.waterRegionIdMap[p] : -1;
+      const landId = state.landRegionIdMap ? state.landRegionIdMap[p] : -1;
+
+      if (state.waterFocusEnabled) {
+        if (waterId !== -1) return waterId;
+        return -1;
+      }
+
+      if (state.borderMask && state.borderMask[p]) return -1;
+      if (landId !== -1) return landId;
+      return waterId;
+    }
+
+    function populateStaticUI() {
+      populateSelect(els.regionLand, LAND_TYPES);
+      populateSelect(els.regionControl, controlTypes);
+      populateSelect(els.regionStatus, STATUS_TYPES);
+      populateSelect(els.regionFlag, flagValues);
+
+      for (const key of ['mapPopulationSource', 'mapContentSource', 'mapParamASource', 'mapParamBSource', 'mapParamCSource', 'mapParamDSource', 'mapWaterSource']) {
+        populateSelect(els[key], CHANNEL_OPTIONS);
+      }
+      for (const key of ['mapPopulationMode', 'mapContentMode', 'mapParamAMode', 'mapParamBMode', 'mapParamCMode', 'mapParamDMode']) {
+        populateSelect(els[key], MODE_OPTIONS);
+      }
+
+      els.mapPopulationSource.value = 'none';
+      els.mapContentSource.value = 'brightness';
+      els.mapParamASource.value = 'red';
+      els.mapParamBSource.value = 'green';
+      els.mapParamCSource.value = 'blue';
+      els.mapParamDSource.value = 'alpha';
+      els.mapWaterSource.value = 'none';
+
+      els.mapPopulationMode.value = 'linear';
+      els.mapContentMode.value = 'linear';
+      els.mapParamAMode.value = 'linear';
+      els.mapParamBMode.value = 'linear';
+      els.mapParamCMode.value = 'linear';
+      els.mapParamDMode.value = 'linear';
+    }
+
+    function buildMasks() {
+      if (!state.imageData) return;
+
+      const { data, width, height } = state.imageData;
+      const threshold = getGenerationConfig().whiteThreshold;
+
+      const borderMask = createEmptyTypedArray(width, height, 'uint8', 0);
+      const permanentBorderMask = createEmptyTypedArray(width, height, 'uint8', 0);
+      const landMask = createEmptyTypedArray(width, height, 'uint8', 0);
+      const rawWaterMask = createEmptyTypedArray(width, height, 'uint8', 0);
+      const waterMask = createEmptyTypedArray(width, height, 'uint8', 0);
+      const whitePixels = [];
+
+      const waterData = state.waterImageData ? state.waterImageData.data : null;
+      state.usingWaterPng = !!state.waterImageData;
+
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const p = idx(x, y, width);
+        const o = p * 4;
+        const r = data[o], g = data[o + 1], b = data[o + 2], a = data[o + 3];
+
+        if (isBorderPixel(r, g, b, a)) {
+          borderMask[p] = 1;
+          permanentBorderMask[p] = 1;
+        }
+
+        if (waterData) {
+          const wa = waterData[o + 3];
+          if (wa > 0) rawWaterMask[p] = 1;
+        }
+      }
+
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const p = idx(x, y, width);
+        if (borderMask[p]) continue;
+
+        const o = p * 4;
+        const r = data[o], g = data[o + 1], b = data[o + 2], a = data[o + 3];
+        if (!isBorderFringePixel(r, g, b, a, threshold)) continue;
+
+        let touchesPermanentBorder = false;
+        for (let dy = -1; dy <= 1 && !touchesPermanentBorder; dy++) for (let dx = -1; dx <= 1 && !touchesPermanentBorder; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+          const np = idx(nx, ny, width);
+          if (permanentBorderMask[np]) touchesPermanentBorder = true;
+        }
+
+        if (touchesPermanentBorder) borderMask[p] = 1;
+      }
+
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const p = idx(x, y, width);
+        if (borderMask[p]) continue;
+
+        const o = p * 4;
+        const r = data[o], g = data[o + 1], b = data[o + 2], a = data[o + 3];
+        const brightness = (r + g + b) / 3;
+        const isLand = a > 0 && brightness >= threshold;
+
+        if (isLand) {
+          landMask[p] = 1;
+          whitePixels.push(p);
+        }
+      }
+
+      if (waterData) {
+        for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+          const p = idx(x, y, width);
+          if (!rawWaterMask[p]) continue;
+          waterMask[p] = 1;
+        }
+      }
+
+      state.landMask = landMask;
+      state.waterMask = waterMask;
+      state.borderMask = borderMask;
+      state.permanentBorderMask = permanentBorderMask;
+      state.whitePixels = whitePixels;
+      markRenderDirty();
+    }
+
+    function getConnectedComponents(mask) {
+      const visited = createEmptyTypedArray(state.width, state.height, 'uint8', 0);
+      const components = [];
+      const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+      for (let y = 0; y < state.height; y++) for (let x = 0; x < state.width; x++) {
+        const start = idx(x, y, state.width);
+        if (!mask[start] || visited[start]) continue;
+
+        const queue = [start];
+        visited[start] = 1;
+        const pixels = [];
+        let minX = x, minY = y, maxX = x, maxY = y;
+
+        while (queue.length) {
+          const current = queue.pop();
+          pixels.push(current);
+
+          const cy = Math.floor(current / state.width);
+          const cx = current - cy * state.width;
+
+          if (cx < minX) minX = cx;
+          if (cy < minY) minY = cy;
+          if (cx > maxX) maxX = cx;
+          if (cy > maxY) maxY = cy;
+
+          for (const [dx, dy] of dirs) {
+            const nx = cx + dx;
+            const ny = cy + dy;
+            if (nx < 0 || ny < 0 || nx >= state.width || ny >= state.height) continue;
+            const np = idx(nx, ny, state.width);
+            if (!mask[np] || visited[np]) continue;
+            visited[np] = 1;
+            queue.push(np);
+          }
+        }
+
+        components.push({ pixels, minX, minY, maxX, maxY, area: pixels.length });
+      }
+
+      return components;
+    }
+
+    function pickSeedsForComponent(component, seedCount) {
+      const seeds = [];
+      const pixels = component.pixels;
+      if (!pixels.length || seedCount <= 0) return seeds;
+
+      const cols = Math.max(1, Math.round(Math.sqrt(seedCount)));
+      const rows = Math.max(1, Math.ceil(seedCount / cols));
+      const boxW = Math.max(1, component.maxX - component.minX + 1);
+      const boxH = Math.max(1, component.maxY - component.minY + 1);
+      const cellW = boxW / cols;
+      const cellH = boxH / rows;
+      const seen = new Set();
+
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        if (seeds.length >= seedCount) break;
+
+        const startX = Math.floor(component.minX + c * cellW);
+        const endX = Math.floor(component.minX + (c + 1) * cellW - 1);
+        const startY = Math.floor(component.minY + r * cellH);
+        const endY = Math.floor(component.minY + (r + 1) * cellH - 1);
+
+        const candidates = [];
+        for (const p of pixels) {
+          const y = Math.floor(p / state.width);
+          const x = p - y * state.width;
+          if (x >= startX && x <= endX && y >= startY && y <= endY) candidates.push(p);
+        }
+
+        if (candidates.length) {
+          const chosen = candidates[randomInt(0, candidates.length - 1)];
+          if (!seen.has(chosen)) {
+            seen.add(chosen);
+            seeds.push(chosen);
+          }
+        }
+      }
+
+      while (seeds.length < seedCount && seeds.length < pixels.length) {
+        const p = pixels[randomInt(0, pixels.length - 1)];
+        if (!seen.has(p)) {
+          seen.add(p);
+          seeds.push(p);
+        }
+      }
+
+      return seeds;
+    }
+
+    function allocateSeedCounts(components, requestedTotalSeeds, minRegionPixels, smallLandmassThreshold) {
+      const eligible = components.filter(c => c.area >= minRegionPixels);
+      if (!eligible.length) return [];
+
+      const totalArea = eligible.reduce((sum, c) => sum + c.area, 0);
+      const allocations = eligible.map(c => {
+        if (smallLandmassThreshold > 0 && c.area <= smallLandmassThreshold) {
+          return { component: c, seeds: 1, forcedSingle: true };
+        }
+
+        const boxW = c.maxX - c.minX + 1;
+        const boxH = c.maxY - c.minY + 1;
+        const boxArea = boxW * boxH;
+        const spread = Math.max(boxW, boxH) / Math.max(1, Math.min(boxW, boxH));
+        const compactnessPenalty = Math.max(1, boxArea / Math.max(1, c.area));
+
+        let seeds = Math.max(1, Math.round((c.area / totalArea) * requestedTotalSeeds));
+        if (c.area >= minRegionPixels * 8) seeds = Math.max(seeds, 2);
+        if (c.area >= minRegionPixels * 20) seeds = Math.max(seeds, 3);
+        if (spread >= 2.25 && c.area >= minRegionPixels * 6) seeds = Math.max(seeds, 2);
+        if (spread >= 3.5 && c.area >= minRegionPixels * 12) seeds = Math.max(seeds, 3);
+        if (compactnessPenalty >= 1.8 && c.area >= minRegionPixels * 10) seeds = Math.max(seeds, 2);
+
+        return { component: c, seeds: Math.min(seeds, c.area), forcedSingle: false };
+      });
+
+      let currentTotal = allocations.reduce((sum, a) => sum + a.seeds, 0);
+
+      while (currentTotal > requestedTotalSeeds) {
+        const candidate = allocations
+          .filter(a => !a.forcedSingle && a.seeds > 1)
+          .sort((a, b) => (b.seeds - a.seeds) || (a.component.area - b.component.area))[0];
+        if (!candidate) break;
+        candidate.seeds -= 1;
+        currentTotal -= 1;
+      }
+
+      while (currentTotal < requestedTotalSeeds) {
+        const growable = allocations.filter(a => !a.forcedSingle);
+        if (!growable.length) break;
+        growable.sort((a, b) => (b.component.area / Math.max(1, b.seeds)) - (a.component.area / Math.max(1, a.seeds)));
+        growable[0].seeds += 1;
+        currentTotal += 1;
+      }
+
+      return allocations;
+    }
+
+    function getSeedWarp(seed, mode, randomness) {
+      if (mode === 'normal') {
+        return {
+          x: (hashNoise(seed.x, seed.y, seed.id * 7) - 0.5) * 6,
+          y: (hashNoise(seed.x, seed.y, seed.id * 13) - 0.5) * 6
+        };
+      }
+
+      if (mode === 'box') return { x: 0, y: 0 };
+
+      return { x: 0, y: 0 };
+    }
+
+    function getDistanceScore(px, py, seed, cfg) {
+      const warp = getSeedWarp(seed, cfg.mode, cfg.randomness);
+      const dx = px - (seed.x + warp.x);
+      const dy = py - (seed.y + warp.y);
+
+      if (cfg.mode === 'box') {
+        return (Math.abs(dx) + Math.abs(dy)) * 1.15 + Math.max(Math.abs(dx), Math.abs(dy)) * 0.85;
+      }
+
+      if (cfg.mode === 'complex') {
+        return (Math.abs(dx) + Math.abs(dy)) * 1.15 + Math.max(Math.abs(dx), Math.abs(dy)) * 0.85;
+      }
+
+      return dx * dx + dy * dy;
+    }
+
+    function rebuildRegionPixelMapFromMaps() {
+      state.regionPixelMap = new Map();
+      for (const region of state.regions.values()) state.regionPixelMap.set(region.id, []);
+
+      if (state.landRegionIdMap) {
+        for (let p = 0; p < state.landRegionIdMap.length; p++) {
+          const rid = state.landRegionIdMap[p];
+          if (rid === -1) continue;
+          const arr = state.regionPixelMap.get(rid);
+          if (arr) arr.push(p);
+        }
+      }
+
+      if (state.waterRegionIdMap) {
+        for (let p = 0; p < state.waterRegionIdMap.length; p++) {
+          const rid = state.waterRegionIdMap[p];
+          if (rid === -1) continue;
+          const arr = state.regionPixelMap.get(rid);
+          if (arr) arr.push(p);
+        }
+      }
+    }
+
+    function recalcAreasAndSeedsFromPixelMap() {
+      for (const [id, region] of [...state.regions.entries()]) {
+        const pixels = state.regionPixelMap.get(id) || [];
+        if (!pixels.length) {
+          state.regions.delete(id);
+          state.regionPixelMap.delete(id);
+          continue;
+        }
+
+        region.area = pixels.length;
+
+        let sumX = 0, sumY = 0;
+        for (const p of pixels) {
+          const y = Math.floor(p / state.width);
+          const x = p - y * state.width;
+          sumX += x;
+          sumY += y;
+        }
+
+        const cx = sumX / pixels.length;
+        const cy = sumY / pixels.length;
+
+        let bestP = pixels[0];
+        let bestD = Infinity;
+        for (const p of pixels) {
+          const y = Math.floor(p / state.width);
+          const x = p - y * state.width;
+          const d = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+          if (d < bestD) {
+            bestD = d;
+            bestP = p;
+          }
+        }
+
+        const sy = Math.floor(bestP / state.width);
+        const sx = bestP - sy * state.width;
+        region.seed = [sx, sy];
+      }
+    }
+
+    function recalcAreasAndSeeds() {
+      rebuildRegionPixelMapFromMaps();
+      recalcAreasAndSeedsFromPixelMap();
+    }
+
+    function pruneTinyLandRegions(minRegionPixels) {
+      const landRegions = Array.from(state.regions.values()).filter(r => !r.isOcean);
+      if (!landRegions.length) return;
+
+      const tiny = landRegions.filter(r => r.area < minRegionPixels).map(r => r.id);
+      if (!tiny.length) return;
+
+      const tinySet = new Set(tiny);
+      const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+      for (let y = 0; y < state.height; y++) for (let x = 0; x < state.width; x++) {
+        const p = idx(x, y, state.width);
+        const rid = state.landRegionIdMap[p];
+        if (!tinySet.has(rid)) continue;
+
+        const neighborCounts = new Map();
+        for (const [dx, dy] of dirs) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= state.width || ny >= state.height) continue;
+          const np = idx(nx, ny, state.width);
+          const nr = state.landRegionIdMap[np];
+          const neighborRegion = state.regions.get(nr);
+          if (nr !== -1 && nr !== rid && neighborRegion && !neighborRegion.isOcean && !tinySet.has(nr)) {
+            neighborCounts.set(nr, (neighborCounts.get(nr) || 0) + 1);
+          }
+        }
+
+        if (neighborCounts.size) {
+          let bestId = -1;
+          let bestCount = -1;
+          for (const [nr, count] of neighborCounts.entries()) {
+            if (count > bestCount) {
+              bestCount = count;
+              bestId = nr;
+            }
+          }
+          state.landRegionIdMap[p] = bestId;
+        }
+      }
+    }
+    function splitOversizedLandRegions(minRegionPixels, cfg) {
+      const landRegions = Array.from(state.regions.values()).filter(r => !r.isOcean);
+      if (!landRegions.length) return;
+
+      const areas = landRegions.map(r => r.area).filter(a => a > 0).sort((a, b) => a - b);
+      if (!areas.length) return;
+
+      const medianArea = areas[Math.floor(areas.length / 2)];
+      const oversized = landRegions.filter(r => r.area > Math.max(minRegionPixels * 6, medianArea * 2.6));
+
+      for (const region of oversized) {
+        const pixels = state.regionPixelMap.get(region.id) || [];
+        if (pixels.length <= Math.max(minRegionPixels * 4, medianArea * 1.8)) continue;
+
+        let minX = state.width, minY = state.height, maxX = 0, maxY = 0;
+        for (const p of pixels) {
+          const y = Math.floor(p / state.width);
+          const x = p - y * state.width;
+          if (x < minX) minX = x;
+          if (y < minY) minY = y;
+          if (x > maxX) maxX = x;
+          if (y > maxY) maxY = y;
+        }
+
+        const splits = Math.min(4, Math.max(2, Math.round(pixels.length / Math.max(medianArea, minRegionPixels * 3))));
+        const component = { pixels, minX, minY, maxX, maxY, area: pixels.length };
+        const seeds = pickSeedsForComponent(component, splits);
+        if (seeds.length < 2) continue;
+
+        state.regions.delete(region.id);
+
+        const seedInfo = seeds.map((p, i) => {
+          const y = Math.floor(p / state.width);
+          const x = p - y * state.width;
+          const id = state.nextRegionId++;
+          const newRegion = {
+            ...region,
+            id,
+            rebuildColor: rebuildIdentityHexFromId(id),
+            seed: [x, y],
+            area: 0,
+            color: regionColorFromId(id, false),
+            name: `${region.name}.${i + 1}`
+          };
+          state.regions.set(id, newRegion);
+          return { id, x, y };
+        });
+
+        for (const p of pixels) {
+          const py = Math.floor(p / state.width);
+          const px = p - py * state.width;
+          let best = seedInfo[0].id;
+          let bestScore = Infinity;
+
+          for (const seed of seedInfo) {
+            const score = getDistanceScore(px, py, seed, cfg);
+            if (score < bestScore) {
+              bestScore = score;
+              best = seed.id;
+            }
+          }
+
+          state.landRegionIdMap[p] = best;
+        }
+      }
+    }
+
+    function generateWaterRegions(cfg) {
+      const waterRegionIds = new Map();
+
+      for (let y = 0; y < state.height; y++) for (let x = 0; x < state.width; x++) {
+        const p = idx(x, y, state.width);
+        if (!state.waterMask[p] || (state.borderMask && state.borderMask[p] && !state.waterMask[p])) continue;
+
+        const cellX = Math.floor(x / cfg.oceanGridSize);
+        const cellY = Math.floor(y / cfg.oceanGridSize);
+        const key = `${cellX},${cellY}`;
+
+        let regionId = waterRegionIds.get(key);
+        if (!regionId) {
+          regionId = state.nextRegionId++;
+          state.regions.set(regionId, makeDefaultRegion(regionId, cellX * cfg.oceanGridSize, cellY * cfg.oceanGridSize, true));
+          waterRegionIds.set(key, regionId);
+        }
+
+        state.waterRegionIdMap[p] = regionId;
+      }
+    }
+
+    function generateLandRegions(cfg) {
+      const components = getConnectedComponents(state.landMask);
+      const allocations = allocateSeedCounts(components, cfg.seedCount, cfg.minRegionPixels, cfg.smallLandmassThreshold);
+
+      for (const entry of allocations) {
+        const component = entry.component;
+        const seeds = entry.seeds === 1
+          ? [component.pixels[Math.floor(component.pixels.length / 2)]]
+          : pickSeedsForComponent(component, entry.seeds);
+
+        if (!seeds.length) continue;
+
+        const seedInfo = seeds.map(p => {
+          const y = Math.floor(p / state.width);
+          const x = p - y * state.width;
+          const id = state.nextRegionId++;
+          state.regions.set(id, makeDefaultRegion(id, x, y, false));
+          return { id, x, y };
+        });
+
+        for (const p of component.pixels) {
+          const py = Math.floor(p / state.width);
+          const px = p - py * state.width;
+          let bestRegionId = seedInfo[0].id;
+          let bestScore = Infinity;
+
+          for (const seed of seedInfo) {
+            const score = getDistanceScore(px, py, seed, cfg);
+            if (score < bestScore) {
+              bestScore = score;
+              bestRegionId = seed.id;
+            }
+          }
+
+          state.landRegionIdMap[p] = bestRegionId;
+        }
+      }
+    }
+
+    function generateRegions() {
+      if (!state.imageData) {
+        setStatus('Load a primary image first.');
+        return;
+      }
+
+      const cfg = getGenerationConfig();
+      buildMasks();
+      clearRegions();
+
+      generateWaterRegions(cfg);
+      generateLandRegions(cfg);
+
+      recalcAreasAndSeeds();
+      pruneTinyLandRegions(cfg.minRegionPixels);
+      recalcAreasAndSeeds();
+      splitOversizedLandRegions(cfg.minRegionPixels, cfg);
+      recalcAreasAndSeeds();
+
+      if (state.paramImageData) applyParameterMapToRegions(false);
+
+      markRenderDirty();
+      redrawViewport();
+      syncSelectedRegionUI();
+      updateButtons();
+      updateStats();
+      setStatus(`Generated ${state.regions.size} regions.`);
+    }
+
+    function getRegionPixels(region) {
+      return state.regionPixelMap.get(region.id) || [];
+    }
+
+    function splitSelectedRegion() {
+      if (!state.selectedRegionId) { setStatus('Select a region first.'); return; }
+      const region = state.regions.get(state.selectedRegionId);
+      if (!region) return;
+
+      const map = getRegionMapForRegion(region);
+      const pixels = getRegionPixels(region);
+      if (pixels.length < 2) { setStatus('Region is too small to split.'); return; }
+
+      let sumX = 0, sumY = 0;
+      const points = [];
+
+      for (const p of pixels) {
+        const y = Math.floor(p / state.width);
+        const x = p - y * state.width;
+        points.push({ p, x, y });
+        sumX += x;
+        sumY += y;
+      }
+
+      const cx = sumX / points.length;
+      const cy = sumY / points.length;
+
+      let sxx = 0, syy = 0, sxy = 0;
+      for (const point of points) {
+        const dx = point.x - cx;
+        const dy = point.y - cy;
+        sxx += dx * dx;
+        syy += dy * dy;
+        sxy += dx * dy;
+      }
+
+      const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+      const ux = Math.cos(angle);
+      const uy = Math.sin(angle);
+
+      const projected = points.map(point => ({
+        ...point,
+        t: (point.x - cx) * ux + (point.y - cy) * uy
+      }));
+
+      projected.sort((a, b) => a.t - b.t);
+      const median = projected[Math.floor(projected.length / 2)].t;
+      const moving = projected.filter(point => point.t > median);
+
+      if (!moving.length || moving.length === projected.length) {
+        setStatus('Split failed for this shape.');
+        return;
+      }
+
+      const newSeed = moving[Math.floor(moving.length / 2)];
+      const newId = state.nextRegionId++;
+      const newRegion = {
+        ...region,
+        id: newId,
+        rebuildColor: rebuildIdentityHexFromId(newId),
+        seed: [newSeed.x, newSeed.y],
+        area: 0,
+        color: regionColorFromId(newId, region.isOcean),
+        name: `${region.name}.2`
+      };
+
+      state.regions.set(newId, newRegion);
+
+      for (const point of projected) {
+        map[point.p] = point.t > median ? newId : region.id;
+      }
+
+      recalcAreasAndSeeds();
+      markRenderDirty();
+      state.selectedRegionId = newId;
+      syncSelectedRegionUI();
+      redrawViewport();
+      setStatus(`Split region ${region.id} into ${region.id} and ${newId}.`);
+    }
+
+    function mergeRegionIntoSelected(sourceId) {
+      const targetId = state.selectedRegionId;
+      if (!targetId || !sourceId || targetId === sourceId) return;
+
+      const target = state.regions.get(targetId);
+      const source = state.regions.get(sourceId);
+      if (!target || !source) return;
+      if (target.isOcean !== source.isOcean) {
+        setStatus('You can only merge regions from the same layer.');
+        return;
+      }
+
+      const map = getRegionMapForRegion(target);
+      for (let p = 0; p < map.length; p++) {
+        if (map[p] === sourceId) map[p] = targetId;
+      }
+
+      state.regions.delete(sourceId);
+      recalcAreasAndSeeds();
+      state.hoverRegionId = null;
+      state.mergeMode = false;
+      markRenderDirty();
+      syncSelectedRegionUI();
+      redrawViewport();
+      setStatus(`Merged region ${sourceId} into region ${targetId}.`);
+    }
+
+    function subdivideSelectedWaterRegion() {
+      if (!state.selectedRegionId) { setStatus('Select a water region first.'); return; }
+      const region = state.regions.get(state.selectedRegionId);
+      if (!region || !region.isOcean) { setStatus('Subdivide only works on water regions.'); return; }
+
+      const pixels = getRegionPixels(region);
+      if (!pixels.length) { setStatus('Region has no pixels to subdivide.'); return; }
+
+      let minX = state.width, minY = state.height, maxX = 0, maxY = 0;
+      for (const p of pixels) {
+        const y = Math.floor(p / state.width);
+        const x = p - y * state.width;
+        if (x < minX) minX = x;
+        if (y < minY) minY = y;
+        if (x > maxX) maxX = x;
+        if (y > maxY) maxY = y;
+      }
+
+      const boxW = maxX - minX + 1;
+      const boxH = maxY - minY + 1;
+      if (boxW < 2 || boxH < 2) {
+        setStatus('Water region is too small to subdivide.');
+        return;
+      }
+
+      const midX = minX + boxW / 2;
+      const midY = minY + boxH / 2;
+      const map = state.waterRegionIdMap;
+
+      const ids = [];
+      for (let i = 0; i < 4; i++) {
+        const id = state.nextRegionId++;
+        ids.push(id);
+        state.regions.set(id, makeDefaultRegion(id, minX, minY, true));
+      }
+
+      let assigned = 0;
+      for (const p of pixels) {
+        const y = Math.floor(p / state.width);
+        const x = p - y * state.width;
+        let q = 0;
+        if (x >= midX && y < midY) q = 1;
+        else if (x < midX && y >= midY) q = 2;
+        else if (x >= midX && y >= midY) q = 3;
+
+        map[p] = ids[q];
+        assigned++;
+      }
+
+      if (!assigned) {
+        setStatus('Subdivision failed.');
+        return;
+      }
+
+      state.regions.delete(region.id);
+      recalcAreasAndSeeds();
+      markRenderDirty();
+      state.selectedRegionId = ids[0];
+      syncSelectedRegionUI();
+      redrawViewport();
+      setStatus(`Subdivided water region ${region.id}.`);
+    }
+
+    function getChannelValueAt(data, p, source) {
+      const o = p * 4;
+      const r = data[o], g = data[o + 1], b = data[o + 2], a = data[o + 3];
+      switch (source) {
+        case 'red': return r;
+        case 'green': return g;
+        case 'blue': return b;
+        case 'alpha': return a;
+        case 'brightness': return Math.round((r + g + b) / 3);
+        default: return null;
+      }
+    }
+
+    function transformNormalizedValue(normalized, mode) {
+      if (mode === 'quadratic') return normalized * normalized;
+      if (mode === 'inverseQuadratic') return Math.sqrt(normalized);
+      return normalized;
+    }
+
+    function getParameterMapConfig() {
+      return {
+        population: { source: els.mapPopulationSource.value, mode: els.mapPopulationMode.value, max: Math.max(0, toInt(els.mapPopulationMax.value, 1000)) },
+        content: { source: els.mapContentSource.value, mode: els.mapContentMode.value, max: Math.max(0, toInt(els.mapContentMax.value, 100)) },
+        paramA: { source: els.mapParamASource.value, mode: els.mapParamAMode.value, max: Math.max(0, toInt(els.mapParamAMax.value, 100)) },
+        paramB: { source: els.mapParamBSource.value, mode: els.mapParamBMode.value, max: Math.max(0, toInt(els.mapParamBMax.value, 100)) },
+        paramC: { source: els.mapParamCSource.value, mode: els.mapParamCMode.value, max: Math.max(0, toInt(els.mapParamCMax.value, 100)) },
+        paramD: { source: els.mapParamDSource.value, mode: els.mapParamDMode.value, max: Math.max(0, toInt(els.mapParamDMax.value, 100)) },
+        water: { source: els.mapWaterSource.value, threshold: clamp(toInt(els.mapWaterThreshold.value, 160), 0, 255) }
+      };
+    }
+
+    function applyParameterMapToRegions(showStatus = true) {
+      if (!state.paramImageData) { setStatus('No parameter map loaded.'); return; }
+
+      const landRegions = Array.from(state.regions.values()).filter(r => !r.isOcean);
+      if (!landRegions.length) { setStatus('Generate land regions before applying the parameter map.'); return; }
+
+      const config = getParameterMapConfig();
+      const channelData = state.paramImageData.data;
+      const stats = new Map();
+
+      for (const region of landRegions) {
+        stats.set(region.id, {
+          count: 0,
+          sums: { population: 0, content: 0, paramA: 0, paramB: 0, paramC: 0, paramD: 0, water: 0 }
+        });
+      }
+
+      for (let p = 0; p < state.landRegionIdMap.length; p++) {
+        const rid = state.landRegionIdMap[p];
+        if (rid === -1 || !stats.has(rid) || (state.borderMask && state.borderMask[p])) continue;
+
+        const regionStats = stats.get(rid);
+        regionStats.count += 1;
+
+        for (const field of ['population', 'content', 'paramA', 'paramB', 'paramC', 'paramD']) {
+          const source = config[field].source;
+          if (source === 'none') continue;
+          const value = getChannelValueAt(channelData, p, source);
+          if (value !== null) regionStats.sums[field] += value;
+        }
+
+        if (config.water.source !== 'none') {
+          const value = getChannelValueAt(channelData, p, config.water.source);
+          if (value !== null) regionStats.sums.water += value;
+        }
+      }
+
+      for (const region of landRegions) {
+        const s = stats.get(region.id);
+        if (!s || !s.count) continue;
+
+        for (const field of ['population', 'content', 'paramA', 'paramB', 'paramC', 'paramD']) {
+          const cfg = config[field];
+          if (cfg.source === 'none') continue;
+          const avg = s.sums[field] / s.count;
+          const normalized = clamp(avg / 255, 0, 1);
+          const transformed = transformNormalizedValue(normalized, cfg.mode);
+          region[field] = Math.round(transformed * cfg.max);
+        }
+
+        if (config.water.source !== 'none') {
+          region.water = (s.sums.water / s.count) >= config.water.threshold;
+        }
+      }
+
+      markRenderDirty();
+      syncSelectedRegionUI();
+      redrawViewport();
+      if (showStatus) setStatus('Applied parameter map to land regions.');
+    }
+
+    function clearParameterMap() {
+      state.paramImageBitmap = null;
+      state.paramImageData = null;
+      state.paramImageName = '';
+      els.paramImageInput.value = '';
+      setStatus('Cleared parameter map.');
+    }
+
+    function renderDefaultParamsEditor() {
+      els.defaultParamsContainer.innerHTML = '';
+      if (!state.extraDefaultParams.length) {
+        els.defaultParamsContainer.innerHTML = '<div class="muted small">No extra default parameters yet.</div>';
+        return;
+      }
+
+      state.extraDefaultParams.forEach((param, index) => {
+        const card = document.createElement('div');
+        card.className = 'default-param-card';
+        card.innerHTML = `
+          <div class="default-param-head">
+            <strong>Default ${index + 1}</strong>
+            <button type="button" class="danger" data-remove-default="${index}">Remove</button>
+          </div>
+          <div class="row">
+            <div><label>Key</label><input type="text" data-default-field="key" data-default-index="${index}" value="${escapeHtml(param.key)}" placeholder="ExampleField" /></div>
+            <div><label>Default value</label><input type="text" data-default-field="defaultValue" data-default-index="${index}" value="${escapeHtml(param.defaultValue)}" placeholder="Default text" /></div>
+          </div>`;
+        els.defaultParamsContainer.appendChild(card);
+      });
+
+      els.defaultParamsContainer.querySelectorAll('[data-default-field]').forEach(el => {
+        el.addEventListener('input', evt => {
+          const i = toInt(evt.target.dataset.defaultIndex, -1);
+          const field = evt.target.dataset.defaultField;
+          if (i < 0 || !state.extraDefaultParams[i]) return;
+          state.extraDefaultParams[i][field] = evt.target.value;
+        });
+      });
+
+      els.defaultParamsContainer.querySelectorAll('[data-remove-default]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const i = toInt(btn.dataset.removeDefault, -1);
+          if (i < 0) return;
+          const removedKey = sanitizeKey(state.extraDefaultParams[i].key);
+          state.extraDefaultParams.splice(i, 1);
+          for (const region of state.regions.values()) {
+            if (region.extraFields) delete region.extraFields[removedKey];
+          }
+          renderDefaultParamsEditor();
+          renderExtraFieldsEditor(state.selectedRegionId ? state.regions.get(state.selectedRegionId) : null);
+        });
+      });
+    }
+
+    function renderControlsEditor() {
+      els.controlsContainer.innerHTML = '';
+      controlTypes.forEach((name, index) => {
+        const card = document.createElement('div');
+        card.className = 'control-card';
+        const protectedFaction = name === 'Neutral';
+
+        card.innerHTML = `
+          <div class="control-head">
+            <strong>${escapeHtml(name)}</strong>
+            <button type="button" class="danger" data-remove-control="${index}" ${protectedFaction ? 'disabled' : ''}>Remove</button>
+          </div>`;
+        els.controlsContainer.appendChild(card);
+      });
+
+      els.controlsContainer.querySelectorAll('[data-remove-control]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const i = toInt(btn.dataset.removeControl, -1);
+          if (i < 0 || i >= controlTypes.length) return;
+          const removed = controlTypes[i];
+          if (removed === 'Neutral') return;
+
+          controlTypes.splice(i, 1);
+
+          for (const region of state.regions.values()) {
+            if (region.control === removed) region.control = 'Neutral';
+          }
+
+          populateSelect(els.regionControl, controlTypes);
+          renderControlsEditor();
+          syncSelectedRegionUI();
+          markRenderDirty();
+          redrawViewport();
+          setStatus(`Removed control faction ${removed}.`);
+        });
+      });
+    }
+
+    function addControlFaction(name) {
+      const clean = String(name || '').trim();
+      if (!clean) { setStatus('Enter a control faction name first.'); return; }
+      if (controlTypes.includes(clean)) { setStatus('That control faction already exists.'); return; }
+
+      controlTypes.push(clean);
+      if (!CONTROL_COLORS[clean]) CONTROL_COLORS[clean] = hslToHex((controlTypes.length * 47) % 360, 55, 55);
+      els.newControlName.value = '';
+      populateSelect(els.regionControl, controlTypes);
+      renderControlsEditor();
+      markRenderDirty();
+      redrawViewport();
+      setStatus(`Added control faction ${clean}.`);
+    }
+
+    function renderFlagsEditor() {
+      els.flagsContainer.innerHTML = '';
+      flagValues.forEach((name, index) => {
+        const card = document.createElement('div');
+        card.className = 'flag-card';
+        const protectedFlag = name === 'None';
+
+        card.innerHTML = `
+          <div class="flag-head">
+            <strong>${escapeHtml(name)}</strong>
+            <button type="button" class="danger" data-remove-flag="${index}" ${protectedFlag ? 'disabled' : ''}>Remove</button>
+          </div>`;
+        els.flagsContainer.appendChild(card);
+      });
+
+      els.flagsContainer.querySelectorAll('[data-remove-flag]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const i = toInt(btn.dataset.removeFlag, -1);
+          if (i < 0 || i >= flagValues.length) return;
+          const removed = flagValues[i];
+          if (removed === 'None') return;
+
+          flagValues.splice(i, 1);
+
+          for (const region of state.regions.values()) {
+            if (region.flag === removed) region.flag = 'None';
+          }
+
+          populateSelect(els.regionFlag, flagValues);
+          renderFlagsEditor();
+          syncSelectedRegionUI();
+          setStatus(`Removed flag ${removed}.`);
+        });
+      });
+    }
+
+    function addFlagValue(name) {
+      const clean = String(name || '').trim();
+      if (!clean) { setStatus('Enter a flag value first.'); return; }
+      if (flagValues.includes(clean)) { setStatus('That flag already exists.'); return; }
+
+      flagValues.push(clean);
+      els.newFlagName.value = '';
+      populateSelect(els.regionFlag, flagValues);
+      renderFlagsEditor();
+      setStatus(`Added flag ${clean}.`);
+    }
+
+    function renderExtraFieldsEditor(region) {
+      els.extraFieldsContainer.innerHTML = '';
+      if (!state.extraDefaultParams.length) return;
+
+      state.extraDefaultParams.forEach(def => {
+        const key = sanitizeKey(def.key);
+        if (!key) return;
+        const value = region ? (region.extraFields?.[key] ?? '') : '';
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = `<label for="extra_${key}">${escapeHtml(key)}</label><input id="extra_${key}" type="text" data-extra-key="${escapeHtml(key)}" value="${escapeHtml(value)}" placeholder="${escapeHtml(def.defaultValue || '')}" />`;
+        els.extraFieldsContainer.appendChild(wrapper);
+      });
+    }
+
+    function collectExtraFieldValues() {
+      const result = {};
+      els.extraFieldsContainer.querySelectorAll('[data-extra-key]').forEach(input => {
+        result[input.dataset.extraKey] = input.value;
+      });
+      return result;
+    }
+
+    function updateButtons() {
+      const active = !!state.selectedRegionId;
+      const region = active ? state.regions.get(state.selectedRegionId) : null;
+
+      els.mergeModeBtn.textContent = state.mergeMode ? 'Merge mode: On' : 'Merge mode: Off';
+      els.mergeModeBtn.disabled = !active;
+      els.splitRegionBtn.disabled = !active;
+      els.cancelMergeBtn.disabled = !state.mergeMode;
+      els.saveRegionBtn.disabled = !active;
+      els.resetRegionBtn.disabled = !active;
+      els.subdivideWaterBtn.disabled = !(region && region.isOcean);
+      els.rebuildFromSaveBtn.disabled = !state.imageData || !state.rebuildLandImageData || !state.rebuildWaterImageData || !state.pendingExportObject || state.loadInProgress;
+
+      els.waterFocusToggleBtn.classList.toggle('toggle-on', state.waterFocusEnabled);
+      els.waterFocusToggleBtn.textContent = `Water Focus: ${state.waterFocusEnabled ? 'On' : 'Off'}`;
+
+      els.factionViewToggleBtn.classList.toggle('toggle-warn', state.factionViewEnabled);
+      els.factionViewToggleBtn.textContent = `Faction View: ${state.factionViewEnabled ? 'On' : 'Off'}`;
+    }
+
+    function syncSelectedRegionUI() {
+      const region = state.selectedRegionId ? state.regions.get(state.selectedRegionId) : null;
+      renderExtraFieldsEditor(region);
+
+      if (!region) {
+        els.selectionSummary.innerHTML = '<span class="muted">No region selected.</span>';
+        els.regionName.value = '';
+        els.regionLand.value = 'Grass';
+        els.regionControl.value = 'Neutral';
+        els.regionWater.value = 'false';
+        els.regionStatus.value = 'Rural';
+        els.regionFlag.value = 'None';
+        els.regionElevation.value = 0;
+        els.regionPopulation.value = 0;
+        els.regionTaxPerc.value = 20;
+        els.regionContent.value = 30;
+        els.regionParamA.value = 0;
+        els.regionParamB.value = 0;
+        els.regionParamC.value = 0;
+        els.regionParamD.value = 0;
+        els.regionFreshWater.value = 0;
+        els.regionClimate.value = '';
+        els.regionNotes.value = '';
+        els.regionColor.value = '#5da9ff';
+        updateButtons();
+        return;
+      }
+
+      const layerText = region.isOcean ? 'water' : 'land';
+      const mergeText = state.mergeMode
+        ? '<br><span class="small" style="color:#fde68a;">Merge mode active: click other regions in the same layer to merge them into this one. Hold Shift to keep merging multiple regions.</span>'
+        : '';
+
+      els.selectionSummary.innerHTML = `<span class="selected-box" style="background:${region.color}"></span><strong>${escapeHtml(region.name)}</strong><br><span class="small muted">ID ${region.id} • area ${region.area} px • ${layerText} • seed (${region.seed[0]}, ${region.seed[1]})</span>${mergeText}`;
+      els.regionName.value = region.name;
+      els.regionLand.value = region.land;
+      els.regionControl.value = controlTypes.includes(region.control) ? region.control : 'Neutral';
+      els.regionWater.value = String(region.water);
+      els.regionStatus.value = region.status;
+      els.regionFlag.value = flagValues.includes(region.flag) ? region.flag : 'None';
+      els.regionElevation.value = region.elevation;
+      els.regionPopulation.value = region.population;
+      els.regionTaxPerc.value = region.taxPerc;
+      els.regionContent.value = region.content;
+      els.regionParamA.value = region.paramA;
+      els.regionParamB.value = region.paramB;
+      els.regionParamC.value = region.paramC;
+      els.regionParamD.value = region.paramD;
+      els.regionFreshWater.value = region.freshWater ?? 0;
+      els.regionClimate.value = region.climate ?? '';
+      els.regionNotes.value = region.notes;
+      els.regionColor.value = region.color;
+      updateButtons();
+    }
+
+    function saveSelectedRegion() {
+      if (!state.selectedRegionId) { setStatus('Select a region first.'); return; }
+      const region = state.regions.get(state.selectedRegionId);
+      if (!region) return;
+
+      region.name = els.regionName.value.trim() || (region.isOcean ? `Water ${region.id}` : `Region ${region.id}`);
+      region.land = region.isOcean ? 'Ocean' : els.regionLand.value;
+      region.control = controlTypes.includes(els.regionControl.value) ? els.regionControl.value : 'Neutral';
+      region.water = region.isOcean ? true : els.regionWater.value === 'true';
+      region.status = els.regionStatus.value;
+      region.flag = flagValues.includes(els.regionFlag.value) ? els.regionFlag.value : 'None';
+      region.elevation = Math.max(0, toInt(els.regionElevation.value, 0));
+      region.population = Math.max(0, toInt(els.regionPopulation.value, 0));
+      region.taxPerc = toInt(els.regionTaxPerc.value, 20);
+      region.content = toInt(els.regionContent.value, 30);
+      region.paramA = toInt(els.regionParamA.value, 0);
+      region.paramB = toInt(els.regionParamB.value, 0);
+      region.paramC = toInt(els.regionParamC.value, 0);
+      region.paramD = toInt(els.regionParamD.value, 0);
+      region.freshWater = Math.max(0, toInt(els.regionFreshWater.value, 0));
+      region.climate = els.regionClimate.value.trim();
+      region.extraFields = collectExtraFieldValues();
+      region.notes = els.regionNotes.value;
+      region.color = els.regionColor.value;
+
+      markRenderDirty();
+      redrawViewport();
+      syncSelectedRegionUI();
+      setStatus(`Saved region ${region.id}.`);
+    }
+
+    function resetSelectedRegion() {
+      if (!state.selectedRegionId) return;
+      const region = state.regions.get(state.selectedRegionId);
+      if (!region) return;
+
+      const fresh = makeDefaultRegion(region.id, region.seed[0], region.seed[1], region.isOcean);
+      Object.assign(region, {
+        name: fresh.name,
+        land: fresh.land,
+        control: fresh.control,
+        water: fresh.water,
+        status: fresh.status,
+        flag: fresh.flag,
+        elevation: fresh.elevation,
+        population: fresh.population,
+        taxPerc: fresh.taxPerc,
+        content: fresh.content,
+        paramA: fresh.paramA,
+        paramB: fresh.paramB,
+        paramC: fresh.paramC,
+        paramD: fresh.paramD,
+        freshWater: fresh.freshWater,
+        climate: fresh.climate,
+        extraFields: { ...fresh.extraFields },
+        notes: fresh.notes,
+        color: fresh.color
+      });
+
+      markRenderDirty();
+      syncSelectedRegionUI();
+      redrawViewport();
+      setStatus(`Reset region ${region.id}.`);
+    }
+
+    function buildMainRenderCache() {
+      if (!state.width || !state.height) return;
+      ensureRenderCacheSize();
+
+      const out = new Uint8ClampedArray(state.width * state.height * 4);
+
+      for (let p = 0; p < state.width * state.height; p++) {
+        const o = p * 4;
+
+        const landId = state.landRegionIdMap ? state.landRegionIdMap[p] : -1;
+        const waterId = state.waterRegionIdMap ? state.waterRegionIdMap[p] : -1;
+        const isBorder = !!(state.borderMask && state.borderMask[p]);
+
+        if (state.waterFocusEnabled) {
+          if (waterId !== -1) {
+            const region = state.regions.get(waterId);
+            if (!region) {
+              out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0;
+              continue;
+            }
+            const { r, g, b } = hexToRgb(region.color);
+            out[o] = r; out[o + 1] = g; out[o + 2] = b; out[o + 3] = 255;
+            continue;
+          }
+
+          if (isBorder) {
+            out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 180;
+            continue;
+          }
+
+          out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0;
+          continue;
+        }
+
+        if (isBorder) {
+          out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 255;
+          continue;
+        }
+
+        const rid = landId !== -1 ? landId : waterId;
+        if (rid === -1) {
+          out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0;
+          continue;
+        }
+
+        const region = state.regions.get(rid);
+        if (!region) {
+          out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0;
+          continue;
+        }
+
+        const { r, g, b } = hexToRgb(region.color);
+        out[o] = r; out[o + 1] = g; out[o + 2] = b; out[o + 3] = 255;
+      }
+
+      state.renderCache.mainData = out;
+      state.renderCache.mainCtx.putImageData(new ImageData(out, state.width, state.height), 0, 0);
+      state.renderCache.dirtyMain = false;
+    }
+
+    function buildFactionRenderCache() {
+      if (!state.width || !state.height) return;
+      ensureRenderCacheSize();
+
+      const out = new Uint8ClampedArray(state.width * state.height * 4);
+
+      for (let p = 0; p < state.width * state.height; p++) {
+        const o = p * 4;
+
+        const waterId = state.waterRegionIdMap ? state.waterRegionIdMap[p] : -1;
+        const landId = state.landRegionIdMap ? state.landRegionIdMap[p] : -1;
+
+        if (!state.waterFocusEnabled && state.borderMask && state.borderMask[p]) {
+          out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 255;
+          continue;
+        }
+
+        let rid = -1;
+        if (state.waterFocusEnabled) rid = waterId;
+        else rid = landId !== -1 ? landId : waterId;
+
+        if (rid === -1) {
+          out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0;
+          continue;
+        }
+
+        const region = state.regions.get(rid);
+        if (!region) {
+          out[o] = 0; out[o + 1] = 0; out[o + 2] = 0; out[o + 3] = 0;
+          continue;
+        }
+
+        const base = hexToRgb(CONTROL_COLORS[region.control] || CONTROL_COLORS.Neutral);
+
+        if (region.isOcean) {
+          const x = p % state.width;
+          const y = Math.floor(p / state.width);
+          const stripe = ((x + y) % 10) < 4;
+          if (stripe) {
+            out[o] = base.r;
+            out[o + 1] = base.g;
+            out[o + 2] = base.b;
+          } else {
+            out[o] = 255;
+            out[o + 1] = 255;
+            out[o + 2] = 255;
+          }
+        } else {
+          out[o] = base.r;
+          out[o + 1] = base.g;
+          out[o + 2] = base.b;
+        }
+
+        out[o + 3] = 255;
+      }
+
+      state.renderCache.factionData = out;
+      state.renderCache.factionCtx.putImageData(new ImageData(out, state.width, state.height), 0, 0);
+      state.renderCache.dirtyFaction = false;
+    }
+
+    function buildWaterFocusLandOverlayCache() {
+      if (!state.width || !state.height) return;
+      ensureRenderCacheSize();
+
+      const out = new Uint8ClampedArray(state.width * state.height * 4);
+
+      for (let p = 0; p < state.width * state.height; p++) {
+        const o = p * 4;
+        if (state.landMask && state.landMask[p]) {
+          out[o] = 255;
+          out[o + 1] = 255;
+          out[o + 2] = 0;
+          out[o + 3] = 72;
+        } else {
+          out[o] = 0;
+          out[o + 1] = 0;
+          out[o + 2] = 0;
+          out[o + 3] = 0;
+        }
+      }
+
+      state.renderCache.waterFocusLandData = out;
+      state.renderCache.waterFocusLandCtx.putImageData(new ImageData(out, state.width, state.height), 0, 0);
+      state.renderCache.dirtyWaterFocusLand = false;
+    }
+
+    function ensureRenderCaches() {
+      if (state.renderCache.dirtyMain || !state.renderCache.mainData) buildMainRenderCache();
+      if (state.renderCache.dirtyFaction || !state.renderCache.factionData) buildFactionRenderCache();
+      if (state.renderCache.dirtyWaterFocusLand || !state.renderCache.waterFocusLandData) buildWaterFocusLandOverlayCache();
+    }
+
+    function applySelectionHighlight(baseData) {
+      if (!state.selectedRegionId && !state.hoverRegionId) return baseData;
+      const out = new Uint8ClampedArray(baseData);
+
+      const brightenRegion = (regionId, amount) => {
+        if (!regionId) return;
+        const pixels = state.regionPixelMap.get(regionId);
+        if (!pixels || !pixels.length) return;
+
+        for (const p of pixels) {
+          let visibleId = -1;
+          if (state.waterFocusEnabled) visibleId = state.waterRegionIdMap[p];
+          else visibleId = (state.landRegionIdMap[p] !== -1) ? state.landRegionIdMap[p] : state.waterRegionIdMap[p];
+
+          if (visibleId !== regionId) continue;
+
+          const o = p * 4;
+          out[o] = clamp(out[o] + amount, 0, 255);
+          out[o + 1] = clamp(out[o + 1] + amount, 0, 255);
+          out[o + 2] = clamp(out[o + 2] + amount, 0, 255);
+          out[o + 3] = clamp(Math.max(out[o + 3], 200), 0, 255);
+        }
+      };
+
+      if (state.hoverRegionId && state.hoverRegionId !== state.selectedRegionId) brightenRegion(state.hoverRegionId, 18);
+      if (state.selectedRegionId) brightenRegion(state.selectedRegionId, 34);
+
+      return out;
+    }
+
+    function redrawViewportNow() {
+      if (!state.width || !state.height) return;
+
+      ensureRenderCaches();
+
+      ctx.clearRect(0, 0, state.width, state.height);
+      factionViewCtx.clearRect(0, 0, state.width, state.height);
+      waterFocusLandCtx.clearRect(0, 0, state.width, state.height);
+      overlayCtx.clearRect(0, 0, state.width, state.height);
+
+      const mainImage = applySelectionHighlight(state.renderCache.mainData);
+      ctx.putImageData(new ImageData(mainImage, state.width, state.height), 0, 0);
+
+      factionViewCtx.drawImage(state.renderCache.factionCanvas, 0, 0);
+      els.factionViewCanvas.style.display = state.factionViewEnabled ? 'block' : 'none';
+
+      if (state.waterFocusEnabled) {
+        waterFocusLandCtx.drawImage(state.renderCache.waterFocusLandCanvas, 0, 0);
+        els.waterFocusLandCanvas.style.display = 'block';
+      } else {
+        els.waterFocusLandCanvas.style.display = 'none';
+      }
+
+      setCanvasTransform();
+    }
+
+    function redrawViewport() {
+      if (state.renderCache.rafPending) return;
+      state.renderCache.rafPending = true;
+
+      requestAnimationFrame(() => {
+        state.renderCache.rafPending = false;
+        redrawViewportNow();
+      });
+    }
+    function buildExportObject() {
+      const gen = getGenerationConfig();
+      return {
+        image: {
+          name: state.imageName,
+          width: state.width,
+          height: state.height,
+          white_threshold: gen.whiteThreshold
+        },
+        water_image: {
+          name: state.waterImageName || null,
+          loaded: !!state.waterImageData,
+          semantics: 'opaque_pixels_are_water'
+        },
+        rebuild_land_png: {
+          expected_name: `${state.imageName}_rebuild_land.png`,
+          semantics: `black=permanent_main_png_borders_only, ${REBUILD_LAND_TRANSPARENT_HEX}=transparent_gap_for_rebuild_land_only, all_other_colors=unique_rebuild_identity_colors`
+        },
+        rebuild_water_png: {
+          expected_name: `${state.imageName}_rebuild_water.png`,
+          semantics: 'all_non_black_colors=water_regions'
+        },
+        generation: {
+          seed_count: gen.seedCount,
+          white_threshold: gen.whiteThreshold,
+          min_region_pixels: gen.minRegionPixels,
+          small_landmass_single_region_threshold: gen.smallLandmassThreshold,
+          ocean_grid_size: gen.oceanGridSize,
+          seed_mode: gen.mode,
+          complex_randomness: gen.randomness,
+          complex_perturbation: gen.perturbation,
+          complex_noise_scale: gen.noiseScale
+        },
+        parameter_map: {
+          name: state.paramImageName || null,
+          loaded: !!state.paramImageData,
+          mapping: getParameterMapConfig()
+        },
+        land_types: LAND_TYPES,
+        control_types: controlTypes,
+        flag_values: flagValues,
+        status_types: STATUS_TYPES,
+        extra_default_text_fields: state.extraDefaultParams
+          .map(def => ({ key: sanitizeKey(def.key), defaultValue: def.defaultValue || '' }))
+          .filter(def => def.key),
+        regions: Array.from(state.regions.values())
+          .filter(r => r.area > 0)
+          .sort((a, b) => a.id - b.id)
+          .map(region => ({
+            id: region.id,
+            name: region.name,
+            land: region.land,
+            control: region.control,
+            water: region.water,
+            status: region.status,
+            flag: region.flag,
+            elevation: region.elevation,
+            population: region.population,
+            taxPerc: region.taxPerc,
+            content: region.content,
+            paramA: region.paramA,
+            paramB: region.paramB,
+            paramC: region.paramC,
+            paramD: region.paramD,
+            freshWater: region.freshWater ?? 0,
+            climate: region.climate ?? '',
+            ...region.extraFields,
+            color: region.color,
+            rebuildColor: region.rebuildColor || rebuildIdentityHexFromId(region.id),
+            seed: region.seed,
+            area: region.area,
+            notes: region.notes,
+            isOcean: region.isOcean
+          }))
+      };
+    }
+
+    function buildSaveObject() {
+      const gen = getGenerationConfig();
+      return {
+        version: 11,
+        image: {
+          name: state.imageName,
+          width: state.width,
+          height: state.height
+        },
+        ui: {
+          water_focus: state.waterFocusEnabled,
+          faction_view: state.factionViewEnabled
+        },
+        generation: {
+          seed_count: gen.seedCount,
+          white_threshold: gen.whiteThreshold,
+          min_region_pixels: gen.minRegionPixels,
+          small_landmass_single_region_threshold: gen.smallLandmassThreshold,
+          ocean_grid_size: gen.oceanGridSize,
+          seed_mode: gen.mode,
+          complex_randomness: gen.randomness,
+          complex_perturbation: gen.perturbation,
+          complex_noise_scale: gen.noiseScale
+        },
+        controls: controlTypes,
+        flags: flagValues,
+        extra_default_params: state.extraDefaultParams,
+        nextRegionId: state.nextRegionId,
+        masks: {
+          landMask: Array.from(state.landMask || []),
+          waterMask: Array.from(state.waterMask || []),
+          borderMask: Array.from(state.borderMask || []),
+          permanentBorderMask: Array.from(state.permanentBorderMask || [])
+        },
+        maps: {
+          landRegionIdMap: Array.from(state.landRegionIdMap || []),
+          waterRegionIdMap: Array.from(state.waterRegionIdMap || [])
+        },
+        regions: Array.from(state.regions.values()).map(region => ({
+          ...region,
+          rebuildColor: region.rebuildColor || rebuildIdentityHexFromId(region.id),
+          extraFields: { ...(region.extraFields || {}) }
+        }))
+      };
+    }
+
+    function restoreSaveObject(obj) {
+      if (!obj || !obj.image || !obj.image.width || !obj.image.height) {
+        setStatus('Invalid save JSON.');
+        return;
+      }
+
+      state.width = obj.image.width;
+      state.height = obj.image.height;
+      state.imageName = obj.image.name || 'map';
+
+      els.mapCanvas.width = state.width;
+      els.mapCanvas.height = state.height;
+      els.factionViewCanvas.width = state.width;
+      els.factionViewCanvas.height = state.height;
+      els.waterFocusLandCanvas.width = state.width;
+      els.waterFocusLandCanvas.height = state.height;
+      els.overlayCanvas.width = state.width;
+      els.overlayCanvas.height = state.height;
+
+      state.imageBitmap = null;
+      state.imageData = null;
+      state.waterImageBitmap = null;
+      state.waterImageData = null;
+      state.paramImageBitmap = null;
+      state.paramImageData = null;
+      state.rebuildLandImageBitmap = null;
+      state.rebuildLandImageData = null;
+      state.rebuildLandImageName = '';
+      state.rebuildWaterImageBitmap = null;
+      state.rebuildWaterImageData = null;
+      state.rebuildWaterImageName = '';
+      state.pendingExportObject = null;
+      state.pendingExportName = '';
+      state.waterImageName = '';
+      state.paramImageName = '';
+
+      controlTypes = Array.isArray(obj.controls) ? [...obj.controls] : ['Neutral'];
+      flagValues = Array.isArray(obj.flags) ? [...obj.flags] : ['None'];
+      state.extraDefaultParams = Array.isArray(obj.extra_default_params) ? [...obj.extra_default_params] : [];
+
+      populateSelect(els.regionControl, controlTypes);
+      populateSelect(els.regionFlag, flagValues);
+      renderControlsEditor();
+      renderFlagsEditor();
+      renderDefaultParamsEditor();
+
+      state.landMask = Uint8Array.from(obj.masks?.landMask || []);
+      state.waterMask = Uint8Array.from(obj.masks?.waterMask || []);
+      state.borderMask = Uint8Array.from(obj.masks?.borderMask || []);
+      state.permanentBorderMask = Uint8Array.from(obj.masks?.permanentBorderMask || obj.masks?.borderMask || []);
+      state.landRegionIdMap = Int32Array.from(obj.maps?.landRegionIdMap || []);
+      state.waterRegionIdMap = Int32Array.from(obj.maps?.waterRegionIdMap || []);
+
+      state.regions = new Map();
+      for (const region of (obj.regions || [])) {
+        state.regions.set(region.id, {
+          ...region,
+          rebuildColor: region.rebuildColor || rebuildIdentityHexFromId(region.id),
+          extraFields: { ...(region.extraFields || {}) }
+        });
+      }
+
+      state.nextRegionId = obj.nextRegionId || 1;
+      state.waterFocusEnabled = !!obj.ui?.water_focus;
+      state.factionViewEnabled = !!obj.ui?.faction_view;
+
+      els.seedCount.value = obj.generation?.seed_count ?? 80;
+      els.whiteThreshold.value = obj.generation?.white_threshold ?? 200;
+      els.minRegionPixels.value = obj.generation?.min_region_pixels ?? 30;
+      els.smallLandmassThreshold.value = obj.generation?.small_landmass_single_region_threshold ?? 80;
+      els.oceanGridSize.value = obj.generation?.ocean_grid_size ?? 500;
+      els.seedMode.value = obj.generation?.seed_mode ?? 'normal';
+      els.complexRandomness.value = Math.round((obj.generation?.complex_randomness ?? 1) * 100);
+      els.complexPerturbation.value = Math.round((obj.generation?.complex_perturbation ?? 1) * 100);
+      els.complexNoiseScale.value = Math.round((obj.generation?.complex_noise_scale ?? 1) * 100);
+
+      rebuildRegionPixelMapFromMaps();
+      recalcAreasAndSeedsFromPixelMap();
+
+      state.selectedRegionId = null;
+      state.hoverRegionId = null;
+      state.mergeMode = false;
+
+      markRenderDirty();
+      fitCanvasToViewport();
+      syncSelectedRegionUI();
+      updateButtons();
+      updateStats();
+      redrawViewport();
+      setStatus('Loaded JSON save.');
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function exportJson() {
+      if (!state.width || !state.height) {
+        setStatus('Nothing to export yet.');
+        return;
+      }
+      downloadBlob(
+        new Blob([JSON.stringify(buildExportObject(), null, 2)], { type: 'application/json' }),
+        `${state.imageName}_regions.json`
+      );
+      setStatus('Exported JSON.');
+    }
+
+    function saveJson() {
+      if (!state.width || !state.height) {
+        setStatus('Nothing to save yet.');
+        return;
+      }
+      downloadBlob(
+        new Blob([JSON.stringify(buildSaveObject(), null, 2)], { type: 'application/json' }),
+        `${state.imageName}_save.json`
+      );
+      setStatus('Saved JSON.');
+    }
+
+    function buildRebuildLayerImageData(layer) {
+      if (!state.width || !state.height) return null;
+
+      const out = new Uint8ClampedArray(state.width * state.height * 4);
+      const isWaterLayer = layer === 'water';
+
+      for (let p = 0; p < state.width * state.height; p++) {
+        const o = p * 4;
+
+        if (isWaterLayer) {
+          const rid = state.waterRegionIdMap ? state.waterRegionIdMap[p] : -1;
+          if (rid === -1) {
+            out[o] = 0;
+            out[o + 1] = 0;
+            out[o + 2] = 0;
+            out[o + 3] = 255;
+            continue;
+          }
+
+          const region = state.regions.get(rid);
+          if (!region) {
+            out[o] = 0;
+            out[o + 1] = 0;
+            out[o + 2] = 0;
+            out[o + 3] = 255;
+            continue;
+          }
+
+          const { r, g, b } = hexToRgb(region.color);
+          out[o] = r;
+          out[o + 1] = g;
+          out[o + 2] = b;
+          out[o + 3] = 255;
+          continue;
+        }
+
+        if (state.permanentBorderMask && state.permanentBorderMask[p]) {
+          out[o] = 0;
+          out[o + 1] = 0;
+          out[o + 2] = 0;
+          out[o + 3] = 255;
+          continue;
+        }
+
+        const self = state.landRegionIdMap ? state.landRegionIdMap[p] : -1;
+        if (self === -1) {
+          out[o] = REBUILD_LAND_TRANSPARENT_RGB.r;
+          out[o + 1] = REBUILD_LAND_TRANSPARENT_RGB.g;
+          out[o + 2] = REBUILD_LAND_TRANSPARENT_RGB.b;
+          out[o + 3] = 255;
+          continue;
+        }
+
+        const region = state.regions.get(self);
+        if (!region) {
+          out[o] = REBUILD_LAND_TRANSPARENT_RGB.r;
+          out[o + 1] = REBUILD_LAND_TRANSPARENT_RGB.g;
+          out[o + 2] = REBUILD_LAND_TRANSPARENT_RGB.b;
+          out[o + 3] = 255;
+          continue;
+        }
+
+        const rebuildHex = region.rebuildColor || rebuildIdentityHexFromId(region.id);
+        const { r, g, b } = hexToRgb(rebuildHex);
+        out[o] = r;
+        out[o + 1] = g;
+        out[o + 2] = b;
+        out[o + 3] = 255;
+      }
+
+      return new ImageData(out, state.width, state.height);
+    }
+
+    function exportPng(mode = 'regions') {
+      if (!state.width || !state.height) {
+        setStatus('Nothing to export yet.');
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = state.width;
+      canvas.height = state.height;
+      const c = canvas.getContext('2d', { willReadFrequently: true });
+
+      if (mode === 'borders') {
+        const out = new ImageData(state.width, state.height);
+        for (let p = 0; p < state.width * state.height; p++) {
+          const o = p * 4;
+          const v = state.borderMask && state.borderMask[p] ? 0 : 255;
+          out.data[o] = v;
+          out.data[o + 1] = v;
+          out.data[o + 2] = v;
+          out.data[o + 3] = 255;
+        }
+        c.putImageData(out, 0, 0);
+      } else if (mode === 'rebuild_land') {
+        const rebuild = buildRebuildLayerImageData('land');
+        if (!rebuild) {
+          setStatus('Nothing to export yet.');
+          return;
+        }
+        c.putImageData(rebuild, 0, 0);
+      } else if (mode === 'rebuild_water') {
+        const rebuild = buildRebuildLayerImageData('water');
+        if (!rebuild) {
+          setStatus('Nothing to export yet.');
+          return;
+        }
+        c.putImageData(rebuild, 0, 0);
+      } else {
+        ensureRenderCaches();
+        if (mode === 'faction') c.drawImage(state.renderCache.factionCanvas, 0, 0);
+        else c.drawImage(state.renderCache.mainCanvas, 0, 0);
+      }
+
+      canvas.toBlob(blob => {
+        downloadBlob(blob, `${state.imageName}_${mode}.png`);
+        setStatus(`Exported ${mode} PNG.`);
+      });
+    }
+
+    function updateStats() {
+      if (!state.width || !state.height || !state.landMask) {
+        els.stats.textContent = 'No image loaded.';
+        return;
+      }
+
+      let landCount = 0, waterCount = 0, borderCount = 0;
+      for (let i = 0; i < state.landMask.length; i++) if (state.landMask[i]) landCount++;
+      for (let i = 0; i < state.waterMask.length; i++) if (state.waterMask[i]) waterCount++;
+      for (let i = 0; i < state.borderMask.length; i++) if (state.borderMask[i]) borderCount++;
+
+      const total = state.width * state.height;
+      const landCoverage = total ? ((landCount / total) * 100).toFixed(2) : '0.00';
+      const regionCount = state.regions.size;
+      const landRegions = Array.from(state.regions.values()).filter(r => !r.isOcean).length;
+      const waterRegions = Array.from(state.regions.values()).filter(r => r.isOcean).length;
+
+      els.stats.innerHTML = `
+        <div>Image: ${state.width} × ${state.height}</div>
+        <div>Land pixels: ${landCount.toLocaleString()} (${landCoverage}%)</div>
+        <div>Water pixels: ${waterCount.toLocaleString()}</div>
+        <div>Border pixels: ${borderCount.toLocaleString()}</div>
+        <div>Regions: ${regionCount} (${landRegions} land, ${waterRegions} water)</div>
+        <div>Water PNG: ${state.waterImageData ? (state.waterImageName || 'loaded') : 'none'}</div>
+        <div>Parameter map: ${state.paramImageData ? (state.paramImageName || 'loaded') : 'none'}</div>
+        <div>Rebuild Land PNG: ${state.rebuildLandImageData ? (state.rebuildLandImageName || 'loaded') : 'none'}</div>
+        <div>Rebuild Water PNG: ${state.rebuildWaterImageData ? (state.rebuildWaterImageName || 'loaded') : 'none'}</div>
+        <div>Loaded export JSON: ${state.pendingExportObject ? (state.pendingExportName || 'loaded') : 'none'}</div>
+        <div>Water focus: ${state.waterFocusEnabled ? 'on' : 'off'}</div>
+        <div>Faction view: ${state.factionViewEnabled ? 'on' : 'off'}</div>`;
+    }
+
+    async function handlePrimaryImageUpload(file) {
+      if (!file) return;
+      state.imageName = file.name.replace(/\.[^.]+$/, '') || 'map';
+
+      const { bitmap, imageData } = await loadBitmapAndImageData(file);
+      state.imageBitmap = bitmap;
+      state.imageData = imageData;
+      state.width = bitmap.width;
+      state.height = bitmap.height;
+
+      els.mapCanvas.width = bitmap.width;
+      els.mapCanvas.height = bitmap.height;
+      els.factionViewCanvas.width = bitmap.width;
+      els.factionViewCanvas.height = bitmap.height;
+      els.waterFocusLandCanvas.width = bitmap.width;
+      els.waterFocusLandCanvas.height = bitmap.height;
+      els.overlayCanvas.width = bitmap.width;
+      els.overlayCanvas.height = bitmap.height;
+
+      buildMasks();
+      clearRegions();
+      fitCanvasToViewport();
+      updateStats();
+      redrawViewport();
+      updateButtons();
+      setStatus(`Loaded primary image ${bitmap.width}×${bitmap.height}.`);
+
+      if (state.paramImageData && (state.paramImageData.width !== state.width || state.paramImageData.height !== state.height)) {
+        clearParameterMap();
+      }
+
+      if (state.waterImageData && (state.waterImageData.width !== state.width || state.waterImageData.height !== state.height)) {
+        state.waterImageBitmap = null;
+        state.waterImageData = null;
+        state.waterImageName = '';
+        els.waterImageInput.value = '';
+        buildMasks();
+      }
+
+      if (state.rebuildLandImageData && (state.rebuildLandImageData.width !== state.width || state.rebuildLandImageData.height !== state.height)) {
+        state.rebuildLandImageBitmap = null;
+        state.rebuildLandImageData = null;
+        state.rebuildLandImageName = '';
+      }
+
+      if (state.rebuildWaterImageData && (state.rebuildWaterImageData.width !== state.width || state.rebuildWaterImageData.height !== state.height)) {
+        state.rebuildWaterImageBitmap = null;
+        state.rebuildWaterImageData = null;
+        state.rebuildWaterImageName = '';
+      }
+    }
+
+    async function handleWaterImageUpload(file) {
+      if (!file) return;
+      if (!state.imageData) {
+        setStatus('Load the primary image first.');
+        return;
+      }
+
+      const { bitmap, imageData } = await loadBitmapAndImageData(file);
+      if (bitmap.width !== state.width || bitmap.height !== state.height) {
+        setStatus('Water PNG must have the same dimensions as the primary image.');
+        return;
+      }
+
+      state.waterImageBitmap = bitmap;
+      state.waterImageData = imageData;
+      state.waterImageName = file.name.replace(/\.[^.]+$/, '') || 'water_mask';
+      buildMasks();
+      clearRegions();
+      updateStats();
+      redrawViewport();
+      updateButtons();
+      setStatus(`Loaded water PNG ${bitmap.width}×${bitmap.height}.`);
+    }
+
+    async function handleParameterImageUpload(file) {
+      if (!file) return;
+      if (!state.imageData) {
+        setStatus('Load the primary image first.');
+        return;
+      }
+
+      const { bitmap, imageData } = await loadBitmapAndImageData(file);
+      if (bitmap.width !== state.width || bitmap.height !== state.height) {
+        setStatus('Parameter map must have the same dimensions as the primary image.');
+        return;
+      }
+
+      state.paramImageBitmap = bitmap;
+      state.paramImageData = imageData;
+      state.paramImageName = file.name.replace(/\.[^.]+$/, '') || 'param_map';
+      updateStats();
+      setStatus(`Loaded parameter map ${bitmap.width}×${bitmap.height}.`);
+
+      if (state.regions.size) applyParameterMapToRegions();
+    }
+
+    async function handleRebuildLandImageUpload(file) {
+      if (!file) return;
+      if (!state.imageData) {
+        setStatus('Load the primary image first.');
+        return;
+      }
+
+      const { bitmap, imageData } = await loadBitmapAndImageData(file);
+      if (bitmap.width !== state.width || bitmap.height !== state.height) {
+        setStatus('Rebuild Land PNG must have the same dimensions as the primary image.');
+        return;
+      }
+
+      state.rebuildLandImageBitmap = bitmap;
+      state.rebuildLandImageData = imageData;
+      state.rebuildLandImageName = file.name.replace(/\.[^.]+$/, '') || 'rebuild_land';
+      updateStats();
+      updateButtons();
+      setStatus(`Loaded Rebuild Land PNG ${bitmap.width}×${bitmap.height}.`);
+    }
+
+    async function handleRebuildWaterImageUpload(file) {
+      if (!file) return;
+      if (!state.imageData) {
+        setStatus('Load the primary image first.');
+        return;
+      }
+
+      const { bitmap, imageData } = await loadBitmapAndImageData(file);
+      if (bitmap.width !== state.width || bitmap.height !== state.height) {
+        setStatus('Rebuild Water PNG must have the same dimensions as the primary image.');
+        return;
+      }
+
+      state.rebuildWaterImageBitmap = bitmap;
+      state.rebuildWaterImageData = imageData;
+      state.rebuildWaterImageName = file.name.replace(/\.[^.]+$/, '') || 'rebuild_water';
+      updateStats();
+      updateButtons();
+      setStatus(`Loaded Rebuild Water PNG ${bitmap.width}×${bitmap.height}.`);
+    }
+
+    function normalizeColorHex(hex) {
+      return String(hex || '').trim().toLowerCase();
+    }
+
+    function makeRegionFromExport(region, reservedExtraKeys) {
+      const extraFields = {};
+      for (const [k, v] of Object.entries(region)) {
+        if (!reservedExtraKeys.has(k)) extraFields[k] = v;
+      }
+
+      return {
+        id: region.id,
+        seed: Array.isArray(region.seed) ? region.seed : [0, 0],
+        area: toInt(region.area, 0),
+        color: region.color || regionColorFromId(region.id, !!region.isOcean),
+        rebuildColor: region.rebuildColor || rebuildIdentityHexFromId(region.id),
+        notes: region.notes || '',
+        name: region.name || (region.isOcean ? `Water ${region.id}` : `Region ${region.id}`),
+        land: region.isOcean ? 'Ocean' : (region.land || 'Grass'),
+        control: controlTypes.includes(region.control) ? region.control : 'Neutral',
+        water: !!region.isOcean || !!region.water,
+        status: region.status || 'Rural',
+        flag: flagValues.includes(region.flag) ? region.flag : 'None',
+        elevation: toInt(region.elevation, 0),
+        population: toInt(region.population, 0),
+        taxPerc: toInt(region.taxPerc, 20),
+        content: toInt(region.content, 30),
+        paramA: toInt(region.paramA, 0),
+        paramB: toInt(region.paramB, 0),
+        paramC: toInt(region.paramC, 0),
+        paramD: toInt(region.paramD, 0),
+        freshWater: toInt(region.freshWater, 0),
+        climate: region.climate || '',
+        extraFields,
+        isOcean: !!region.isOcean
+      };
+    }
+
+    function extractWaterRebuildComponents(imageData) {
+      const { width, height, data } = imageData;
+      const visited = createEmptyTypedArray(width, height, 'uint8', 0);
+      const components = [];
+      const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
+        const start = idx(x, y, width);
+        if (visited[start]) continue;
+
+        const so = start * 4;
+        const sr = data[so], sg = data[so + 1], sb = data[so + 2], sa = data[so + 3];
+
+        if (isBlackBarrier(sr, sg, sb, sa) || sa <= 0) {
+          visited[start] = 1;
+          continue;
+        }
+
+        visited[start] = 1;
+        const queue = [start];
+        const pixels = [];
+        let minX = x, minY = y, maxX = x, maxY = y;
+
+        while (queue.length) {
+          const current = queue.pop();
+          pixels.push(current);
+
+          const cy = Math.floor(current / width);
+          const cx = current - cy * width;
+          if (cx < minX) minX = cx;
+          if (cy < minY) minY = cy;
+          if (cx > maxX) maxX = cx;
+          if (cy > maxY) maxY = cy;
+
+          for (const [dx, dy] of dirs) {
+            const nx = cx + dx;
+            const ny = cy + dy;
+            if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
+
+            const np = idx(nx, ny, width);
+            if (visited[np]) continue;
+
+            const no = np * 4;
+            const nr = data[no], ng = data[no + 1], nb = data[no + 2], na = data[no + 3];
+
+            if (isBlackBarrier(nr, ng, nb, na) || na <= 0) {
+              visited[np] = 1;
+              continue;
+            }
+
+            if (nr !== sr || ng !== sg || nb !== sb || na !== sa) continue;
+
+            visited[np] = 1;
+            queue.push(np);
+          }
+        }
+
+        components.push({
+          pixels,
+          area: pixels.length,
+          color: rgbToHex(sr, sg, sb).toLowerCase(),
+          minX,
+          minY,
+          maxX,
+          maxY
+        });
+      }
+
+      return components;
+    }
+
+    function assignWaterComponentsToRegions(components, candidateRegions) {
+      const buckets = new Map();
+      for (const region of candidateRegions) {
+        const key = normalizeColorHex(region.color);
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(region);
+      }
+
+      for (const arr of buckets.values()) {
+        arr.sort((a, b) => (b.area || 0) - (a.area || 0));
+      }
+
+      let matched = 0;
+
+      for (const component of components) {
+        const key = normalizeColorHex(component.color);
+        const candidates = buckets.get(key) || [];
+        if (!candidates.length) continue;
+
+        candidates.sort((a, b) =>
+          Math.abs((a.area || 0) - component.area) - Math.abs((b.area || 0) - component.area)
+        );
+
+        const region = candidates.shift();
+        if (!region) continue;
+
+        state.regions.set(region.id, {
+          ...region,
+          seed: region.seed || [component.minX, component.minY],
+          area: component.area
+        });
+
+        for (const p of component.pixels) {
+          state.waterRegionIdMap[p] = region.id;
+        }
+
+        matched++;
+      }
+
+      return matched;
+    }
+
+    function buildLandFromRebuildImage(rebuildImageData, landRegions) {
+      const { width, height, data } = rebuildImageData;
+      const idToRegion = new Map();
+      for (const region of landRegions) {
+        idToRegion.set(region.id, region);
+      }
+
+      let matchedPixels = 0;
+
+      state.landMask.fill(0);
+      state.landRegionIdMap.fill(-1);
+
+      for (let p = 0; p < width * height; p++) {
+        const o = p * 4;
+        const r = data[o];
+        const g = data[o + 1];
+        const b = data[o + 2];
+        const a = data[o + 3];
+
+        if (a <= 0) continue;
+
+        if (isRebuildLandTransparentPixel(r, g, b, a)) {
+          continue;
+        }
+
+        if (isBlackBarrier(r, g, b, a)) {
+          if (state.permanentBorderMask && state.permanentBorderMask[p]) {
+            state.borderMask[p] = 1;
+          } else {
+            state.borderMask[p] = 0;
+          }
+          continue;
+        }
+
+        const regionId = regionIdFromRebuildIdentityColor(r, g, b);
+        const region = idToRegion.get(regionId);
+        if (!region) continue;
+
+        state.landRegionIdMap[p] = region.id;
+        state.landMask[p] = 1;
+        matchedPixels++;
+      }
+
+      return matchedPixels;
+    }
+
+    async function rebuildFromLoadedSave() {
+      if (!state.imageData) {
+        setStatus('Load the main PNG first.');
+        return;
+      }
+      if (!state.rebuildLandImageData) {
+        setStatus('Load the Rebuild Land PNG first.');
+        return;
+      }
+      if (!state.rebuildWaterImageData) {
+        setStatus('Load the Rebuild Water PNG first.');
+        return;
+      }
+      if (!state.pendingExportObject) {
+        setStatus('Load the export JSON first.');
+        return;
+      }
+
+      const obj = state.pendingExportObject;
+
+      if (!obj || !Array.isArray(obj.regions)) {
+        setStatus('Invalid export JSON.');
+        return;
+      }
+
+      if (obj.image?.width && obj.image?.height) {
+        if (obj.image.width !== state.width || obj.image.height !== state.height) {
+          setStatus('Export JSON dimensions do not match the loaded main PNG.');
+          return;
+        }
+      }
+
+      if (state.rebuildLandImageData.width !== state.width || state.rebuildLandImageData.height !== state.height) {
+        setStatus('Rebuild Land PNG dimensions do not match the loaded main PNG.');
+        return;
+      }
+
+      if (state.rebuildWaterImageData.width !== state.width || state.rebuildWaterImageData.height !== state.height) {
+        setStatus('Rebuild Water PNG dimensions do not match the loaded main PNG.');
+        return;
+      }
+
+      state.loadInProgress = true;
+      updateButtons();
+      setStatus('Rebuilding from save...');
+
+      controlTypes = Array.isArray(obj.control_types) ? [...obj.control_types] : controlTypes;
+      flagValues = Array.isArray(obj.flag_values) ? [...obj.flag_values] : flagValues;
+      state.extraDefaultParams = Array.isArray(obj.extra_default_text_fields)
+        ? obj.extra_default_text_fields.map(d => ({ key: d.key || '', defaultValue: d.defaultValue || '' }))
+        : [];
+
+      populateSelect(els.regionControl, controlTypes);
+      populateSelect(els.regionFlag, flagValues);
+      renderControlsEditor();
+      renderFlagsEditor();
+      renderDefaultParamsEditor();
+
+      if (obj.generation) {
+        if (obj.generation.seed_count != null) els.seedCount.value = obj.generation.seed_count;
+        if (obj.generation.white_threshold != null) els.whiteThreshold.value = obj.generation.white_threshold;
+        else if (obj.image?.white_threshold != null) els.whiteThreshold.value = obj.image.white_threshold;
+        if (obj.generation.min_region_pixels != null) els.minRegionPixels.value = obj.generation.min_region_pixels;
+        if (obj.generation.small_landmass_single_region_threshold != null) els.smallLandmassThreshold.value = obj.generation.small_landmass_single_region_threshold;
+        if (obj.generation.ocean_grid_size != null) els.oceanGridSize.value = obj.generation.ocean_grid_size;
+        if (obj.generation.seed_mode) els.seedMode.value = obj.generation.seed_mode;
+        if (obj.generation.complex_randomness != null) els.complexRandomness.value = Math.round(obj.generation.complex_randomness * 100);
+        if (obj.generation.complex_perturbation != null) els.complexPerturbation.value = Math.round(obj.generation.complex_perturbation * 100);
+        if (obj.generation.complex_noise_scale != null) els.complexNoiseScale.value = Math.round(obj.generation.complex_noise_scale * 100);
+      }
+
+      buildMasks();
+      clearRegions();
+      await sleepFrame();
+
+      const reservedExtraKeys = new Set([
+        'id', 'name', 'land', 'control', 'water', 'status', 'flag', 'elevation',
+        'population', 'taxPerc', 'content', 'paramA', 'paramB', 'paramC', 'paramD',
+        'freshWater', 'climate', 'color', 'rebuildColor', 'seed', 'area', 'notes', 'isOcean'
+      ]);
+
+      const sourceRegions = obj.regions.map(r => makeRegionFromExport(r, reservedExtraKeys));
+      const landRegions = sourceRegions.filter(r => !r.isOcean);
+      const waterRegions = sourceRegions.filter(r => r.isOcean);
+
+      for (const region of sourceRegions) {
+        state.regions.set(region.id, {
+          ...region,
+          extraFields: { ...(region.extraFields || {}) }
+        });
+      }
+
+      const waterComponents = extractWaterRebuildComponents(state.rebuildWaterImageData);
+      assignWaterComponentsToRegions(waterComponents, waterRegions);
+      setStatus(`Rebuilding from save... water ${waterComponents.length} components`);
+      await sleepFrame();
+
+      const matchedLandPixels = buildLandFromRebuildImage(state.rebuildLandImageData, landRegions);
+
+      recalcAreasAndSeeds();
+
+      let matchedLandRegions = 0;
+      for (const region of landRegions) {
+        const pixels = state.regionPixelMap.get(region.id) || [];
+        if (pixels.length) matchedLandRegions++;
+      }
+
+      let maxId = 0;
+      for (const region of state.regions.values()) maxId = Math.max(maxId, region.id);
+      state.nextRegionId = maxId + 1;
+
+      state.selectedRegionId = null;
+      state.hoverRegionId = null;
+      state.mergeMode = false;
+      state.loadInProgress = false;
+
+      markRenderDirty();
+      syncSelectedRegionUI();
+      updateButtons();
+      updateStats();
+      redrawViewport();
+
+      if (!state.regions.size) {
+        setStatus('Rebuild failed: no regions could be reconstructed.');
+        return;
+      }
+
+      setStatus(`Rebuilt from Rebuild Land PNG + Rebuild Water PNG + JSON. Land regions restored: ${matchedLandRegions}/${landRegions.length}. Land pixels restored: ${matchedLandPixels.toLocaleString()}.`);
+    }
+
+    els.imageInput.addEventListener('change', async evt => {
+      const file = evt.target.files?.[0];
+      if (!file) return;
+      try {
+        await handlePrimaryImageUpload(file);
+      } catch (err) {
+        console.error(err);
+        setStatus('Failed to load primary image.');
+      }
+    });
+
+    els.waterImageInput.addEventListener('change', async evt => {
+      const file = evt.target.files?.[0];
+      if (!file) return;
+      try {
+        await handleWaterImageUpload(file);
+      } catch (err) {
+        console.error(err);
+        setStatus('Failed to load water PNG.');
+      }
+    });
+
+    els.paramImageInput.addEventListener('change', async evt => {
+      const file = evt.target.files?.[0];
+      if (!file) return;
+      try {
+        await handleParameterImageUpload(file);
+      } catch (err) {
+        console.error(err);
+        setStatus('Failed to load parameter map.');
+      }
+    });
+
+    els.loadSaveInput.addEventListener('change', async evt => {
+      const file = evt.target.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        restoreSaveObject(JSON.parse(text));
+      } catch (err) {
+        console.error(err);
+        setStatus('Failed to load JSON save.');
+      }
+    });
+
+    els.loadExportInput.addEventListener('change', async evt => {
+      const file = evt.target.files?.[0];
+      if (!file) return;
+      try {
+        const text = await file.text();
+        state.pendingExportObject = JSON.parse(text);
+        state.pendingExportName = file.name.replace(/\.[^.]+$/, '') || 'regions';
+        updateStats();
+        updateButtons();
+        setStatus('Loaded export JSON. Now load the Rebuild Land PNG, Rebuild Water PNG, and click Rebuild from save.');
+      } catch (err) {
+        console.error(err);
+        state.pendingExportObject = null;
+        state.pendingExportName = '';
+        updateButtons();
+        setStatus('Failed to load export JSON.');
+      }
+    });
+
+    els.loadRebuildLandPngInput.addEventListener('change', async evt => {
+      const file = evt.target.files?.[0];
+      if (!file) return;
+      try {
+        await handleRebuildLandImageUpload(file);
+      } catch (err) {
+        console.error(err);
+        setStatus('Failed to load Rebuild Land PNG.');
+      }
+    });
+
+    els.loadRebuildWaterPngInput.addEventListener('change', async evt => {
+      const file = evt.target.files?.[0];
+      if (!file) return;
+      try {
+        await handleRebuildWaterImageUpload(file);
+      } catch (err) {
+        console.error(err);
+        setStatus('Failed to load Rebuild Water PNG.');
+      }
+    });
+
+    els.rebuildFromSaveBtn.addEventListener('click', async () => {
+      try {
+        await rebuildFromLoadedSave();
+      } catch (err) {
+        console.error(err);
+        state.loadInProgress = false;
+        updateButtons();
+        setStatus('Rebuild from save failed.');
+      }
+    });
+
+    els.generateBtn.addEventListener('click', () => {
+      try {
+        generateRegions();
+      } catch (err) {
+        console.error(err);
+        setStatus('Region generation failed.');
+      }
+    });
+
+    els.clearSelectionBtn.addEventListener('click', () => {
+      clearSelections();
+      syncSelectedRegionUI();
+      redrawViewport();
+    });
+
+    els.overlayCanvas.addEventListener('mousemove', evt => {
+      if (!state.width || !state.height || (!state.regions.size && !state.waterMask)) return;
+      const pos = getCanvasImageCoords(evt);
+      if (!pos) return;
+      const regionId = getRegionAtPixel(pos.x, pos.y);
+      const nextHover = regionId === -1 ? null : regionId;
+      if (nextHover !== state.hoverRegionId) {
+        state.hoverRegionId = nextHover;
+        redrawViewport();
+      }
+    });
+
+    els.overlayCanvas.addEventListener('mouseleave', () => {
+      if (state.hoverRegionId !== null) {
+        state.hoverRegionId = null;
+        redrawViewport();
+      }
+    });
+
+    els.overlayCanvas.addEventListener('click', evt => {
+      if (!state.width || !state.height || state.loadInProgress) return;
+      const pos = getCanvasImageCoords(evt);
+      if (!pos) return;
+
+      const regionId = getRegionAtPixel(pos.x, pos.y);
+
+      if (state.mergeMode && state.selectedRegionId && regionId !== -1 && regionId !== state.selectedRegionId) {
+        mergeRegionIntoSelected(regionId);
+        if (!evt.shiftKey) state.mergeMode = false;
+        syncSelectedRegionUI();
+        redrawViewport();
+        return;
+      }
+
+      state.selectedRegionId = regionId === -1 ? null : regionId;
+      state.mergeMode = false;
+      syncSelectedRegionUI();
+      redrawViewport();
+    });
+
+    els.viewport.addEventListener('wheel', evt => {
+      if (!state.width || !state.height) return;
+      evt.preventDefault();
+      zoomAtClientPoint(evt.clientX, evt.clientY, evt.deltaY < 0 ? 1.12 : 1 / 1.12);
+    }, { passive: false });
+
+    els.saveRegionBtn.addEventListener('click', saveSelectedRegion);
+    els.resetRegionBtn.addEventListener('click', resetSelectedRegion);
+    els.splitRegionBtn.addEventListener('click', splitSelectedRegion);
+    els.subdivideWaterBtn.addEventListener('click', subdivideSelectedWaterRegion);
+
+    els.mergeModeBtn.addEventListener('click', () => {
+      if (!state.selectedRegionId) {
+        setStatus('Select a target region first.');
+        return;
+      }
+      state.mergeMode = !state.mergeMode;
+      syncSelectedRegionUI();
+      redrawViewport();
+      setStatus(state.mergeMode
+        ? 'Merge mode enabled. Click another region in the same layer to merge it into the selected one. Hold Shift to merge multiple regions quickly.'
+        : 'Merge mode disabled.');
+    });
+
+    els.cancelMergeBtn.addEventListener('click', () => {
+      state.mergeMode = false;
+      syncSelectedRegionUI();
+      redrawViewport();
+      setStatus('Merge mode cancelled.');
+    });
+
+    els.addDefaultParamBtn.addEventListener('click', () => {
+      state.extraDefaultParams.push({ key: '', defaultValue: '' });
+      renderDefaultParamsEditor();
+      renderExtraFieldsEditor(state.selectedRegionId ? state.regions.get(state.selectedRegionId) : null);
+    });
+
+    els.applyDefaultParamsBtn.addEventListener('click', () => {
+      const defaults = getExtraDefaultsObject();
+      for (const region of state.regions.values()) {
+        if (!region.extraFields) region.extraFields = {};
+        for (const [key, value] of Object.entries(defaults)) {
+          if (!(key in region.extraFields)) region.extraFields[key] = value;
+        }
+      }
+      setStatus('Applied extra default parameters to existing regions.');
+    });
+
+    els.clearDefaultParamsBtn.addEventListener('click', () => {
+      state.extraDefaultParams = [];
+      for (const region of state.regions.values()) region.extraFields = {};
+      renderDefaultParamsEditor();
+      renderExtraFieldsEditor(state.selectedRegionId ? state.regions.get(state.selectedRegionId) : null);
+      setStatus('Cleared added defaults.');
+    });
+
+    els.addControlBtn.addEventListener('click', () => addControlFaction(els.newControlName.value));
+    els.addControlFromTextBtn.addEventListener('click', () => addControlFaction(els.newControlName.value));
+    els.addFlagBtn.addEventListener('click', () => addFlagValue(els.newFlagName.value));
+    els.addFlagFromTextBtn.addEventListener('click', () => addFlagValue(els.newFlagName.value));
+
+    els.applyParamMapBtn.addEventListener('click', () => applyParameterMapToRegions(true));
+    els.clearParamMapBtn.addEventListener('click', clearParameterMap);
+
+    els.saveJsonBtn.addEventListener('click', saveJson);
+    els.exportJsonBtn.addEventListener('click', exportJson);
+    els.exportPngBtn.addEventListener('click', () => exportPng('regions'));
+    els.exportFactionBtn.addEventListener('click', () => exportPng('faction'));
+    els.exportRebuildLandBtn.addEventListener('click', () => exportPng('rebuild_land'));
+    els.exportRebuildWaterBtn.addEventListener('click', () => exportPng('rebuild_water'));
+    els.exportBorderBtn.addEventListener('click', () => exportPng('borders'));
+
+    els.waterFocusToggleBtn.addEventListener('click', () => {
+      state.waterFocusEnabled = !state.waterFocusEnabled;
+      state.selectedRegionId = null;
+      state.hoverRegionId = null;
+      state.mergeMode = false;
+      updateButtons();
+      markRenderDirty();
+      redrawViewport();
+      syncSelectedRegionUI();
+      updateStats();
+      setStatus(state.waterFocusEnabled
+        ? 'Water Focus enabled. Land is bright transparent yellow, and the mouse ignores it completely.'
+        : 'Water Focus disabled.');
+    });
+
+    els.factionViewToggleBtn.addEventListener('click', () => {
+      state.factionViewEnabled = !state.factionViewEnabled;
+      updateButtons();
+      redrawViewport();
+      setStatus(state.factionViewEnabled ? 'Faction View enabled.' : 'Faction View disabled.');
+    });
+
+    els.whiteThreshold.addEventListener('change', () => {
+      if (!state.imageData) return;
+      buildMasks();
+      clearRegions();
+      fitCanvasToViewport();
+      redrawViewport();
+      updateStats();
+      setStatus('Threshold updated. Regenerate regions when ready.');
+    });
+
+    window.addEventListener('resize', () => {
+      if (!state.width || !state.height) return;
+      clampOffsets();
+      setCanvasTransform();
+      redrawViewport();
+    });
+
+    populateStaticUI();
+    renderDefaultParamsEditor();
+    renderControlsEditor();
+    renderFlagsEditor();
+    renderExtraFieldsEditor(null);
+    syncSelectedRegionUI();
+    updateButtons();
+    setStatus('Load a primary PNG to begin.');
+  </script>
+</body>
+</html>
